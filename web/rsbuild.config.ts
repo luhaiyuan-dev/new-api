@@ -19,7 +19,30 @@ export default defineConfig(({ envMode }) => {
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      {
+        target: serverUrl,
+        changeOrigin: true,
+        // TEMP DIAGNOSTIC: trace dev-proxy traffic so requests that never reach
+        // the backend can be told apart from browser-side failures. Remove once
+        // the payment-gateway 404 is resolved.
+        on: {
+          proxyReq: (_proxyReq: any, req: any) => {
+            console.log(`[dev-proxy] -> ${req.method} ${req.url}`)
+          },
+          proxyRes: (proxyRes: any, req: any) => {
+            if (proxyRes.statusCode >= 400) {
+              console.warn(
+                `[dev-proxy] <- ${req.method} ${req.url} ${proxyRes.statusCode}`
+              )
+            }
+          },
+          error: (err: any, req: any) => {
+            console.warn(
+              `[dev-proxy] error ${req.method} ${req.url}: ${err.message}`
+            )
+          },
+        },
+      },
     ])
   ) as Record<string, { target: string; changeOrigin: boolean }>
 

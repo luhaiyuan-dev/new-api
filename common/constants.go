@@ -19,9 +19,11 @@ var TopUpLink = ""
 
 // var ChatLink = ""
 // var ChatLink2 = ""
-var QuotaPerUnit = 500 * 1000.0 // $0.002 / 1K tokens
-// 保留旧变量以兼容历史逻辑，实际展示由 general_setting.quota_display_type 控制
-var DisplayInCurrencyEnabled = true
+// QuotaPerUnit 为 1 元人民币对应的 quota 数量，即 1 quota = ¥0.000002。
+// 站点以人民币为唯一计价单位：模型价格的单位是「元 / 1M tokens」，
+// 充值数量与用户余额也一律以元结算，不再存在汇率换算。
+var QuotaPerUnit = 500 * 1000.0
+
 var DisplayTokenStatEnabled = true
 var DrawingEnabled = true
 var TaskEnabled = true

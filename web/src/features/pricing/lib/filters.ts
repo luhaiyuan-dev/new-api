@@ -24,6 +24,8 @@ import {
   ENDPOINT_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import { getDynamicPricingTiers, isDynamicPricingModel } from './dynamic-price'
+import { isTokenBasedModel } from './model-helpers'
 
 // ----------------------------------------------------------------------------
 // Filter Utilities
@@ -71,18 +73,47 @@ export function filterByGroup(
 }
 
 /**
- * Filter models by quota type
+ * Match a model against the pricing type shown in the UI.
+ *
+ * Dynamic pricing models win over their raw `quota_type`, because the list and
+ * the detail view also display them as dynamic regardless of the fallback
+ * price the backend stores for them.
+ */
+export function matchesPricingType(
+  model: PricingModel,
+  pricingType: string
+): boolean {
+  if (pricingType === QUOTA_TYPES.ALL) return true
+
+  const isDynamic = isDynamicPricingModel(model)
+
+  if (pricingType === QUOTA_TYPES.DYNAMIC) return isDynamic
+  if (pricingType === QUOTA_TYPES.TOKEN) {
+    return isTokenBasedModel(model) && !isDynamic
+  }
+  return model.quota_type === QUOTA_TYPE_VALUES.REQUEST && !isDynamic
+}
+
+/**
+ * Filter models by pricing type
  */
 export function filterByQuotaType(
   models: PricingModel[],
   quotaType: string
 ): PricingModel[] {
   if (quotaType === QUOTA_TYPES.ALL) return models
-  const targetType =
-    quotaType === QUOTA_TYPES.TOKEN
-      ? QUOTA_TYPE_VALUES.TOKEN
-      : QUOTA_TYPE_VALUES.REQUEST
-  return models.filter((m) => m.quota_type === targetType)
+  return models.filter((m) => matchesPricingType(m, quotaType))
+}
+
+/**
+ * Filter models by the media kind declared in the media price table.
+ */
+export function filterByMediaKind(
+  models: PricingModel[],
+  mediaKind: string
+): PricingModel[] {
+  if (mediaKind === FILTER_ALL) return models
+  return models.filter((m) => m.media_kind === mediaKind)
 }
 
 /**
@@ -99,10 +130,22 @@ export function filterByEndpointType(
 }
 
 /**
- * Get model price for sorting
+ * Resolve the headline price of a model in 元, so token-based, per-request and
+ * dynamic models can be compared on one scale instead of mixing a multiplier
+ * with a currency amount.
+ *
+ * Token-based models store a multiplier; `model_ratio * 2` is its 元 price per
+ * 1M tokens (see `calculateTokenPrice`). Dynamic models carry per-token prices
+ * in their tiers, so their first tier's input price is used. Fixed-price models
+ * store their 元 price per request.
  */
-function getModelPrice(model: PricingModel): number {
-  return model.quota_type === 0 ? model.model_ratio : model.model_price || 0
+function getComparablePrice(model: PricingModel): number {
+  const dynamicInputPrice = Number(getDynamicPricingTiers(model)[0]?.inputPrice)
+  if (Number.isFinite(dynamicInputPrice) && dynamicInputPrice > 0) {
+    return dynamicInputPrice
+  }
+  if (isTokenBasedModel(model)) return model.model_ratio * 2
+  return model.model_price || 0
 }
 
 /**
@@ -121,10 +164,10 @@ export function sortModels(
       )
       break
     case SORT_OPTIONS.PRICE_LOW:
-      sorted.sort((a, b) => getModelPrice(a) - getModelPrice(b))
+      sorted.sort((a, b) => getComparablePrice(a) - getComparablePrice(b))
       break
     case SORT_OPTIONS.PRICE_HIGH:
-      sorted.sort((a, b) => getModelPrice(b) - getModelPrice(a))
+      sorted.sort((a, b) => getComparablePrice(b) - getComparablePrice(a))
       break
   }
 
@@ -141,6 +184,7 @@ export function filterAndSortModels(
     vendor: string
     group: string
     quotaType: string
+    mediaKind: string
     endpointType: string
     tag: string
     sortBy: string
@@ -150,6 +194,7 @@ export function filterAndSortModels(
   result = filterByVendor(result, filters.vendor)
   result = filterByGroup(result, filters.group)
   result = filterByQuotaType(result, filters.quotaType)
+  result = filterByMediaKind(result, filters.mediaKind)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
   result = sortModels(result, filters.sortBy)

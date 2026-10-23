@@ -305,6 +305,12 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	case "completed":
 		taskResult.Status = model.TaskStatusSuccess
 		// Url intentionally left empty — the caller constructs the proxy URL using the public task ID
+		// seconds 是实际生成时长，用于按秒价目表的差额结算
+		if resTask.Seconds != "" {
+			if seconds, err := strconv.Atoi(resTask.Seconds); err == nil && seconds > 0 {
+				taskResult.BillingUnits = float64(seconds)
+			}
+		}
 	case "failed", "cancelled":
 		taskResult.Status = model.TaskStatusFailure
 		if resTask.Error != nil {

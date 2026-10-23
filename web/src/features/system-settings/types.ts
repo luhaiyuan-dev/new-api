@@ -50,6 +50,24 @@ export type ConfirmPaymentComplianceResponse = {
   }
 }
 
+export type PaymentGatewayStatus = {
+  /** Gateway type: wechat | alipay */
+  type: string
+  /** Whether users can currently see and use this gateway */
+  enabled: boolean
+  /** Option keys that still need to be configured */
+  missing: string[]
+}
+
+export type PaymentGatewayStatusResponse = {
+  success: boolean
+  message: string
+  data?: {
+    compliance_confirmed: boolean
+    gateways: PaymentGatewayStatus[]
+  }
+}
+
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
 export type SystemTask<
@@ -217,8 +235,11 @@ export type ModelSettings = {
   ExposeRatioEnabled: boolean
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
+  'billing_setting.billing_unit': string
+  'media_billing_setting.enabled': boolean
+  'media_billing_setting.unknown_tier_policy': string
+  'media_billing_setting.models': string
   'tool_price_setting.prices': string
-  TopupGroupRatio: string
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
@@ -259,11 +280,6 @@ export type BillingSettings = {
   'general_setting.docs_link': string
   'quota_setting.enable_free_model_pre_consume': boolean
   QuotaPerUnit: number
-  USDExchangeRate: number
-  'general_setting.quota_display_type': string
-  'general_setting.custom_currency_symbol': string
-  'general_setting.custom_currency_exchange_rate': number
-  DisplayInCurrencyEnabled: boolean
   DisplayTokenStatEnabled: boolean
   ModelPrice: string
   ModelRatio: string
@@ -276,8 +292,10 @@ export type BillingSettings = {
   ExposeRatioEnabled: boolean
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
+  'media_billing_setting.enabled': boolean
+  'media_billing_setting.unknown_tier_policy': string
+  'media_billing_setting.models': string
   'tool_price_setting.prices': string
-  TopupGroupRatio: string
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
@@ -285,13 +303,8 @@ export type BillingSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
-  PayAddress: string
-  EpayId: string
-  EpayKey: string
-  Price: number
   MinTopUp: number
   CustomCallbackAddress: string
-  PayMethods: string
   'payment_setting.amount_options': string
   'payment_setting.amount_discount': string
   'payment_setting.compliance_confirmed': boolean
@@ -299,38 +312,19 @@ export type BillingSettings = {
   'payment_setting.compliance_confirmed_at': number
   'payment_setting.compliance_confirmed_by': number
   'payment_setting.compliance_confirmed_ip': string
-  StripeApiSecret: string
-  StripeWebhookSecret: string
-  StripePriceId: string
-  StripeUnitPrice: number
-  StripeMinTopUp: number
-  StripePromotionCodesEnabled: boolean
-  CreemApiKey: string
-  CreemWebhookSecret: string
-  CreemTestMode: boolean
-  CreemProducts: string
-  WaffoEnabled: boolean
-  WaffoApiKey: string
-  WaffoPrivateKey: string
-  WaffoPublicCert: string
-  WaffoSandboxPublicCert: string
-  WaffoSandboxApiKey: string
-  WaffoSandboxPrivateKey: string
-  WaffoSandbox: boolean
-  WaffoMerchantId: string
-  WaffoCurrency: string
-  WaffoUnitPrice: number
-  WaffoMinTopUp: number
-  WaffoNotifyUrl: string
-  WaffoReturnUrl: string
-  WaffoPayMethods: string
-  WaffoPancakeMerchantID: string
-  WaffoPancakePrivateKey: string
-  WaffoPancakeReturnURL: string
-  // Bound by the operator through the catalog flow in the admin Pancake
-  // section (saved via /api/option/waffo-pancake/save).
-  WaffoPancakeStoreID: string
-  WaffoPancakeProductID: string
+  WechatAppId: string
+  WechatMchId: string
+  WechatMchSerialNo: string
+  WechatApiV3Key: string
+  WechatMchPrivateKey: string
+  WechatMinTopUp: number
+  WechatOrderExpireMinutes: number
+  AlipayAppId: string
+  AlipayPrivateKey: string
+  AlipayPublicKey: string
+  AlipaySandbox: boolean
+  AlipayMinTopUp: number
+  AlipayOrderExpireMinutes: number
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
@@ -407,6 +401,7 @@ export type RatioType =
   | 'model_price'
   | 'billing_mode'
   | 'billing_expr'
+  | 'billing_unit'
 
 export type RatioDifference = {
   current: number | string | null
@@ -443,11 +438,22 @@ export type TestResult = {
   error?: string
 }
 
+/** Media price spec as configured in `media_billing_setting.models`. */
+export type MediaPriceSpec = import('./models/media-pricing/media-pricing-types').MediaModelSpec
+
+export type MediaDifference = {
+  local?: MediaPriceSpec
+  upstreams: Record<string, MediaPriceSpec>
+}
+
+export type MediaDifferences = Record<string, MediaDifference>
+
 export type UpstreamRatiosResponse = {
   success: boolean
   message: string
   data: {
     differences: DifferencesMap
+    media_differences?: MediaDifferences
     test_results: TestResult[]
   }
 }

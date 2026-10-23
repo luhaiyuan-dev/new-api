@@ -51,6 +51,11 @@ import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
 import { useMediaQuery } from '@/hooks'
 
 import { safeJsonParse } from '../utils/json-parser'
+import { mediaKindLabel } from './media-pricing/media-pricing-format'
+import {
+  parseMediaModels,
+  serializeMediaModels,
+} from './media-pricing/media-pricing-spec'
 import type { PricingMode } from './model-pricing-core'
 import {
   ModelPricingEditorPanel,
@@ -77,6 +82,8 @@ type ModelRatioVisualEditorProps = {
   savedAudioCompletionRatio: string
   savedBillingMode: string
   savedBillingExpr: string
+  savedMediaModels: string
+  mediaModels: string
   modelPrice: string
   modelRatio: string
   cacheRatio: string
@@ -116,6 +123,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
     savedAudioCompletionRatio,
     savedBillingMode,
     savedBillingExpr,
+    savedMediaModels,
+    mediaModels,
     modelPrice,
     modelRatio,
     cacheRatio,
@@ -200,6 +209,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio: savedAudioCompletionRatio,
       billingMode: savedBillingMode,
       billingExpr: savedBillingExpr,
+      mediaModels: savedMediaModels,
     })
     const draftRows = buildModelSnapshots({
       modelPrice,
@@ -212,6 +222,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      mediaModels,
     })
 
     const savedByName = new Map(savedRows.map((row) => [row.name, row]))
@@ -255,6 +266,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
     savedAudioCompletionRatio,
     savedBillingMode,
     savedBillingExpr,
+    savedMediaModels,
+    mediaModels,
     modelPrice,
     modelRatio,
     cacheRatio,
@@ -273,7 +286,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
         (acc, model) => {
           const mode =
             model.billingMode === 'per-request' ||
-            model.billingMode === 'tiered_expr'
+            model.billingMode === 'tiered_expr' ||
+            model.billingMode === 'media'
               ? model.billingMode
               : 'per-token'
           acc[mode] += 1
@@ -283,10 +297,23 @@ const ModelRatioVisualEditorComponent = forwardRef<
           'per-token': 0,
           'per-request': 0,
           tiered_expr: 0,
-        } as Record<'per-token' | 'per-request' | 'tiered_expr', number>
+          media: 0,
+        } as Record<
+          'per-token' | 'per-request' | 'tiered_expr' | 'media',
+          number
+        >
       ),
     [models]
   )
+
+  const mediaKindCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    models.forEach((model) => {
+      const kind = (model.media?.kind ?? '').toString().toLowerCase()
+      if (kind) counts[kind] = (counts[kind] ?? 0) + 1
+    })
+    return counts
+  }, [models])
 
   const handleEdit = useCallback(
     (model: ModelRow) => {
@@ -310,6 +337,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingMode: editBillingMode,
         billingExpr: editableModel.billingExpr,
         requestRuleExpr: editableModel.requestRuleExpr,
+        media: editableModel.media ?? null,
       })
       setEditorOpen(true)
       if (isMobile) setSheetOpen(true)
@@ -380,6 +408,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr,
         { fallback: {}, silent: true }
       )
+      const mediaParsed = parseMediaModels(mediaModels)
 
       delete priceMap[name]
       delete ratioMap[name]
@@ -412,6 +441,15 @@ const ModelRatioVisualEditorComponent = forwardRef<
         JSON.stringify(billingExprMap, null, 2)
       )
 
+      if (!mediaParsed.errorKey) {
+        delete mediaParsed.models[name]
+        delete mediaParsed.opaque[name]
+        onChange(
+          'MediaModels',
+          serializeMediaModels(mediaParsed.models, mediaParsed.opaque)
+        )
+      }
+
       if (editData?.name === name) {
         setEditData(null)
         setEditorOpen(false)
@@ -429,6 +467,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      mediaModels,
       onChange,
       editData,
     ]
@@ -520,6 +559,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
         billingExpr,
         { fallback: {}, silent: true }
       )
+      const mediaParsed = parseMediaModels(mediaModels)
 
       const setIfPresent = (
         target: Record<string, number>,
@@ -542,6 +582,9 @@ const ModelRatioVisualEditorComponent = forwardRef<
         delete audioCompletionMap[name]
         delete billingModeMap[name]
         delete billingExprMap[name]
+        delete mediaParsed.opaque[name]
+        if (data.media) mediaParsed.models[name] = data.media
+        else delete mediaParsed.models[name]
 
         if (data.billingMode === 'tiered_expr') {
           const combined = combineBillingExpr(
@@ -596,6 +639,14 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.billing_expr',
         JSON.stringify(billingExprMap, null, 2)
       )
+      if (mediaParsed.errorKey) {
+        toast.error(t(mediaParsed.errorKey))
+      } else {
+        onChange(
+          'MediaModels',
+          serializeMediaModels(mediaParsed.models, mediaParsed.opaque)
+        )
+      }
     },
     [
       modelPrice,
@@ -608,6 +659,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      mediaModels,
+      t,
       onChange,
     ]
   )
@@ -703,8 +756,32 @@ const ModelRatioVisualEditorComponent = forwardRef<
                     value: 'tiered_expr',
                     count: modeCounts.tiered_expr,
                   },
+                  ...(modeCounts.media > 0
+                    ? [
+                        {
+                          label: t('Media pricing'),
+                          value: 'media',
+                          count: modeCounts.media,
+                        },
+                      ]
+                    : []),
                 ],
               },
+              ...(Object.keys(mediaKindCounts).length > 0
+                ? [
+                    {
+                      columnId: 'media',
+                      title: t('Media kind'),
+                      options: Object.entries(mediaKindCounts).map(
+                        ([value, count]) => ({
+                          label: mediaKindLabel(value, t),
+                          value,
+                          count,
+                        })
+                      ),
+                    },
+                  ]
+                : []),
             ]}
             preActions={
               filterMode === 'unset' ? undefined : (
@@ -725,7 +802,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
               table={table}
               containerClassName='min-h-0 flex-1 rounded-md'
               tableContainerClassName='h-full'
-              tableClassName='min-w-[852px] table-fixed'
+              tableClassName='min-w-[980px] table-fixed'
               tableHeaderClassName='[&_tr]:border-b-0'
               splitHeaderScrollClassName='h-full'
               bodyContainerClassName='[scrollbar-gutter:stable]'
@@ -739,9 +816,10 @@ const ModelRatioVisualEditorComponent = forwardRef<
               colgroup={
                 <colgroup>
                   <col className='w-9' />
-                  <col className='w-[300px]' />
-                  <col className='w-[120px]' />
-                  <col className='w-[300px]' />
+                  <col className='w-[260px]' />
+                  <col className='w-[110px]' />
+                  <col className='w-[190px]' />
+                  <col className='w-[260px]' />
                   <col className='w-auto' />
                 </colgroup>
               }
@@ -842,6 +920,8 @@ export const ModelRatioVisualEditor = memo(
         nextProps.savedAudioCompletionRatio &&
       prevProps.savedBillingMode === nextProps.savedBillingMode &&
       prevProps.savedBillingExpr === nextProps.savedBillingExpr &&
+      prevProps.savedMediaModels === nextProps.savedMediaModels &&
+      prevProps.mediaModels === nextProps.mediaModels &&
       prevProps.modelPrice === nextProps.modelPrice &&
       prevProps.modelRatio === nextProps.modelRatio &&
       prevProps.cacheRatio === nextProps.cacheRatio &&

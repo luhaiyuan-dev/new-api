@@ -10,7 +10,9 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/media_billing_setting"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -264,7 +266,9 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "ImageRatio":
-		err = ratio_setting.UpdateImageRatioByJSONString(option.Value.(string))
+		if err = ratio_setting.ValidateImageRatioMapJSON(option.Value.(string)); err == nil {
+			err = ratio_setting.UpdateImageRatioByJSONString(option.Value.(string))
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -273,7 +277,9 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "AudioRatio":
-		err = ratio_setting.UpdateAudioRatioByJSONString(option.Value.(string))
+		if err = ratio_setting.ValidateAudioRatioMapJSON(option.Value.(string)); err == nil {
+			err = ratio_setting.UpdateAudioRatioByJSONString(option.Value.(string))
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -282,7 +288,9 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "AudioCompletionRatio":
-		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(option.Value.(string))
+		if err = ratio_setting.ValidateAudioCompletionRatioMapJSON(option.Value.(string)); err == nil {
+			err = ratio_setting.UpdateAudioCompletionRatioByJSONString(option.Value.(string))
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -291,7 +299,9 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "CreateCacheRatio":
-		err = ratio_setting.UpdateCreateCacheRatioByJSONString(option.Value.(string))
+		if err = ratio_setting.ValidateCreateCacheRatioMapJSON(option.Value.(string)); err == nil {
+			err = ratio_setting.UpdateCreateCacheRatioByJSONString(option.Value.(string))
+		}
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -355,6 +365,42 @@ func UpdateOption(c *gin.Context) {
 		}
 	case "console_setting.uptime_kuma_groups":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "UptimeKumaGroups")
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "media_billing_setting.models":
+		err = media_billing_setting.ValidateModelsJSON(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "media_billing_setting.unknown_tier_policy":
+		err = media_billing_setting.ValidateUnknownTierPolicy(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "billing_setting.billing_expr":
+		err = billing_setting.ValidateBillingExprJSON(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "billing_setting.billing_unit":
+		err = billing_setting.ValidateBillingUnitJSON(option.Value.(string))
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,

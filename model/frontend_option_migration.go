@@ -44,7 +44,72 @@ func MigrateRetiredFrontendOptions() error {
 	if err := migrateLegacyUptimeOptions(); err != nil {
 		migrationErrors = append(migrationErrors, err)
 	}
+	if err := normalizeLegacyCurrencyOptions(); err != nil {
+		migrationErrors = append(migrationErrors, err)
+	}
 	return errors.Join(migrationErrors...)
+}
+
+// retiredPaymentOptionKeys are option rows left behind by the removed
+// multi-currency display layer, the retired recharge price/ratio/discount
+// configurations and the retired payment gateways.
+var retiredPaymentOptionKeys = []string{
+	"USDExchangeRate",
+	"QuotaDisplayType",
+	"CustomCurrencySymbol",
+	"CustomCurrencyExchangeRate",
+	"DisplayInCurrencyEnabled",
+	"TopupGroupRatio",
+	"Price",
+	"payment_setting.amount_discount",
+	"PayAddress",
+	"EpayId",
+	"EpayKey",
+	"PayMethods",
+	"StripeApiSecret",
+	"StripeWebhookSecret",
+	"StripePriceId",
+	"StripeUnitPrice",
+	"StripeMinTopUp",
+	"StripePromotionCodesEnabled",
+	"CreemApiKey",
+	"CreemWebhookSecret",
+	"CreemTestMode",
+	"CreemProducts",
+	"WaffoEnabled",
+	"WaffoApiKey",
+	"WaffoPrivateKey",
+	"WaffoPublicCert",
+	"WaffoSandboxPublicCert",
+	"WaffoSandboxApiKey",
+	"WaffoSandboxPrivateKey",
+	"WaffoSandbox",
+	"WaffoMerchantId",
+	"WaffoCurrency",
+	"WaffoUnitPrice",
+	"WaffoMinTopUp",
+	"WaffoNotifyUrl",
+	"WaffoReturnUrl",
+	"WaffoPayMethods",
+	"WaffoPancakeMerchantID",
+	"WaffoPancakePrivateKey",
+	"WaffoPancakeReturnURL",
+	"WaffoPancakeStoreID",
+	"WaffoPancakeProductID",
+}
+
+// normalizeLegacyCurrencyOptions deletes option rows that belonged to the
+// removed multi-currency display layer, the removed per-unit recharge price
+// and the retired payment gateways.
+func normalizeLegacyCurrencyOptions() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, key := range retiredPaymentOptionKeys {
+			if err := tx.Where(&Option{Key: key}).Delete(&Option{}).Error; err != nil {
+				return fmt.Errorf("delete retired option %s: %w", key, err)
+			}
+		}
+		return nil
+	})
 }
 
 func normalizeRetiredThemeOption() error {

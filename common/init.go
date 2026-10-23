@@ -199,17 +199,11 @@ func initConstantEnv() {
 	// 异步任务超时时间（分钟），超过此时间未完成的任务将被标记为失败并退款。0 表示禁用。
 	constant.TaskTimeoutMinutes = GetEnvOrDefault("TASK_TIMEOUT_MINUTES", 1440)
 
-	soraPatchStr := GetEnvOrDefaultString("TASK_PRICE_PATCH", "")
-	if soraPatchStr != "" {
-		var taskPricePatches []string
-		soraPatches := strings.Split(soraPatchStr, ",")
-		for _, patch := range soraPatches {
-			trimmedPatch := strings.TrimSpace(patch)
-			if trimmedPatch != "" {
-				taskPricePatches = append(taskPricePatches, trimmedPatch)
-			}
-		}
-		constant.TaskPricePatches = taskPricePatches
+	// TASK_PRICE_PATCH is retired: per-model task pricing now belongs to
+	// media_billing_setting. The env var is still read so operators get a clear
+	// migration warning instead of silently losing the configuration.
+	if deprecatedTaskPricePatch := GetEnvOrDefaultString("TASK_PRICE_PATCH", ""); deprecatedTaskPricePatch != "" {
+		SysError("TASK_PRICE_PATCH 已废弃且不再生效，请改用 media_billing_setting.models 配置按张/按秒/按次价格")
 	}
 
 	// Initialize trusted redirect domains for URL validation

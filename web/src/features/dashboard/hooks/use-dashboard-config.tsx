@@ -95,7 +95,6 @@ export function useSummaryCardsConfig(totals: {
   usedDisplay: string
   requestCountDisplay: string
   currencyLabel: string
-  currencyEnabled: boolean
 }) {
   const { t } = useTranslation()
 
@@ -104,18 +103,14 @@ export function useSummaryCardsConfig(totals: {
       key: 'todayUsage',
       title: t('Last 24h usage'),
       value: totals.todayUsageDisplay,
-      description: totals.currencyEnabled
-        ? `${t('Consumed in the last 24 hours')} (${totals.currencyLabel})`
-        : t('Consumed in the last 24 hours'),
+      description: `${t('Consumed in the last 24 hours')} (${totals.currencyLabel})`,
       icon: Flame,
     },
     {
       key: 'usage',
       title: t('Historical Usage'),
       value: totals.usedDisplay,
-      description: totals.currencyEnabled
-        ? `${t('Total consumed')} (${totals.currencyLabel})`
-        : t('Total consumed quota'),
+      description: `${t('Total consumed')} (${totals.currencyLabel})`,
       icon: TrendingUp,
     },
     {

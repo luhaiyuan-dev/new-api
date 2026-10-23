@@ -333,10 +333,15 @@ func aliImageHandler(a *Adaptor, c *gin.Context, resp *http.Response, info *rela
 	}
 
 	imageResponses := responseAli2OpenAIImage(c, aliResponse, originRespBody, info, responseFormat)
-	if aliResponse.Usage.ImageCount != 0 {
-		info.PriceData.AddOtherRatio("n", float64(aliResponse.Usage.ImageCount))
-	} else if len(imageResponses.Data) != 0 {
-		info.PriceData.AddOtherRatio("n", float64(len(imageResponses.Data)))
+	actualImageCount := aliResponse.Usage.ImageCount
+	if actualImageCount == 0 {
+		actualImageCount = len(imageResponses.Data)
+	}
+	if actualImageCount != 0 {
+		info.PriceData.AddOtherRatio("n", float64(actualImageCount))
+		if info.PriceData.MediaBilling != nil {
+			info.PriceData.MediaBilling.Quantity = float64(actualImageCount)
+		}
 	}
 	jsonResponse, err := common.Marshal(imageResponses)
 	if err != nil {

@@ -17,12 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
+import { AlertTriangle } from 'lucide-react'
 
 import { DataTableColumnHeader } from '@/components/data-table/core/column-header'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 
+import {
+  describeMediaPrice,
+  MEDIA_KIND_VARIANTS,
+  mediaKindLabel,
+} from './media-pricing/media-pricing-format'
 import {
   getModeLabel,
   getModeVariant,
@@ -111,7 +117,9 @@ export function buildModelRatioColumns({
       ),
       cell: ({ row }) => (
         <StatusBadge
-          label={t(getModeLabel(row.original.billingMode))}
+          label={t(
+            getModeLabel(row.original.billingMode, row.original.media?.unit)
+          )}
           variant={getModeVariant(row.original.billingMode)}
           copyable={false}
           showDot={false}
@@ -121,6 +129,66 @@ export function buildModelRatioColumns({
       filterFn: (row, id, value) =>
         filterBySelectedValues(row.getValue(id), value),
       meta: { label: t('Mode') },
+    },
+    {
+      id: 'media',
+      accessorFn: (row) => row.media?.kind ?? '',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Media pricing')} />
+      ),
+      cell: ({ row }) => {
+        const spec = row.original.media
+        if (!spec) {
+          return <span className='text-muted-foreground'>-</span>
+        }
+        const kind = (spec.kind ?? '').toString().toLowerCase()
+        const price = describeMediaPrice(spec, t)
+        const overridesBasePrice =
+          row.original.billingMode !== 'media' && price?.price !== '-'
+        return (
+          <div className='flex min-w-0 flex-col gap-1'>
+            <div className='flex min-w-0 items-center gap-1.5'>
+              {kind ? (
+                <StatusBadge
+                  label={mediaKindLabel(kind, t)}
+                  variant={MEDIA_KIND_VARIANTS[kind] ?? 'neutral'}
+                  copyable={false}
+                  showDot={false}
+                />
+              ) : null}
+              {overridesBasePrice && (
+                <span
+                  title={t(
+                    'Media prices override the fixed or token price for image and video requests.'
+                  )}
+                  aria-label={t(
+                    'Media prices override the fixed or token price for image and video requests.'
+                  )}
+                >
+                  <AlertTriangle className='size-3.5 text-amber-500' />
+                </span>
+              )}
+              {spec.enabled === false && (
+                <span className='text-muted-foreground text-[11px]'>
+                  {t('Disabled')}
+                </span>
+              )}
+            </div>
+            {price && price.price !== '-' && (
+              <span
+                className='text-muted-foreground truncate font-mono text-xs tabular-nums'
+                title={price.detail || undefined}
+              >
+                {price.price}
+              </span>
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+      filterFn: (row, _id, value) =>
+        filterBySelectedValues(row.original.media?.kind ?? '', value),
+      meta: { label: t('Media pricing') },
     },
     {
       id: 'priceSummary',

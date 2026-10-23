@@ -250,6 +250,14 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
 		}
 
+		if widthStr, heightStr, found := strings.Cut(strings.ToLower(strings.TrimSpace(imageRequest.Size)), "x"); found {
+			width, widthErr := strconv.Atoi(strings.TrimSpace(widthStr))
+			height, heightErr := strconv.Atoi(strings.TrimSpace(heightStr))
+			if widthErr == nil && heightErr == nil && (width > dto.MaxImageSide || height > dto.MaxImageSide) {
+				return nil, fmt.Errorf("size width and height must be <= %d pixels", dto.MaxImageSide)
+			}
+		}
+
 		// Not "256x256", "512x512", or "1024x1024"
 		if imageRequest.Model == "dall-e-2" || imageRequest.Model == "dall-e" {
 			if imageRequest.Size != "" && imageRequest.Size != "256x256" && imageRequest.Size != "512x512" && imageRequest.Size != "1024x1024" {

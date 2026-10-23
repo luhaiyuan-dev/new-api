@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,6 +12,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/media_billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -78,6 +80,17 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
 		return modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
+	}
+
+	// Media price table takes precedence over legacy per-call/token pricing.
+	if meta != nil && meta.MediaBilling != nil {
+		resolved, ok, err := media_billing_setting.Resolve(info.OriginModelName, meta.MediaBilling)
+		if err != nil {
+			return hosttypes.PriceData{}, err
+		}
+		if ok {
+			return modelPriceHelperMedia(info, resolved, groupRatioInfo, false)
+		}
 	}
 
 	var preConsumedQuota int
@@ -183,9 +196,219 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	return priceData, nil
 }
 
+// modelPriceHelperMedia prices a request from the media price table.
+//
+// PriceData.ModelPrice carries the per-unit price (元/张、元/秒), and the
+// quantity plus dimension multipliers are stored as OtherRatios so pre-consume
+// and settlement share the existing "ModelPrice × QuotaPerUnit × GroupRatio ×
+// ∏OtherRatios" formula.
+//
+// forTask=true returns Quota before OtherRatios because RelayTaskSubmit applies
+// them afterwards; forTask=false fills QuotaToPreConsume with the final amount.
+func modelPriceHelperMedia(info *relaycommon.RelayInfo, resolved types.ResolvedMediaPrice, groupRatioInfo hosttypes.GroupRatioInfo, forTask bool) (hosttypes.PriceData, error) {
+	freeModel := false
+	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && groupRatioInfo.GroupRatio == 0 {
+		freeModel = true
+	}
+
+	priceData := hosttypes.PriceData{
+		FreeModel:      freeModel,
+		ModelPrice:     resolved.UnitPrice,
+		UsePrice:       true,
+		GroupRatioInfo: groupRatioInfo,
+		MediaBilling:   &resolved,
+	}
+
+	switch resolved.Unit {
+	case types.UnitPerImage:
+		priceData.AddOtherRatio("n", resolved.Quantity)
+	case types.UnitPerSecond:
+		priceData.AddOtherRatio("seconds", resolved.Quantity)
+	}
+	if resolved.ResolutionMultiplier > 0 && resolved.ResolutionMultiplier != 1 {
+		priceData.AddOtherRatio("resolution", resolved.ResolutionMultiplier)
+	}
+	for name, ratio := range resolved.ExtraRatios {
+		priceData.AddOtherRatio(name, ratio)
+	}
+
+	baseQuota := resolved.UnitPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio
+	if forTask {
+		quota, clamp := common.QuotaRoundChecked(baseQuota)
+		noteMediaQuotaClamp(info, clamp)
+		quota = floorMediaQuota(quota, groupRatioInfo.GroupRatio)
+		if freeModel {
+			quota = 0
+		}
+		priceData.Quota = quota
+		info.PriceData = priceData
+		return priceData, nil
+	}
+
+	quota, clamp := common.QuotaRoundChecked(baseQuota * priceData.OtherRatioMultiplier())
+	noteMediaQuotaClamp(info, clamp)
+	quota = floorMediaQuota(quota, groupRatioInfo.GroupRatio)
+	if freeModel {
+		quota = 0
+	}
+	priceData.QuotaToPreConsume = quota
+	info.PriceData = priceData
+	return priceData, nil
+}
+
+// floorMediaQuota keeps a positive charge when a configured unit price rounds
+// down to zero, mirroring the text path's "quota 0 → 1" rule. Free models are
+// zeroed by the caller afterwards.
+func floorMediaQuota(quota int, groupRatio float64) int {
+	if quota == 0 && groupRatio != 0 {
+		return 1
+	}
+	return quota
+}
+
+func noteMediaQuotaClamp(info *relaycommon.RelayInfo, clamp *common.QuotaClamp) {
+	if clamp == nil || info == nil || info.QuotaClamp != nil {
+		return
+	}
+	info.QuotaClamp = clamp
+}
+
+// buildTaskMediaMeta derives raw media dimensions from the stored task request.
+// Adaptors that report richer dimensions (P0-b) can set info.MediaBilling
+// before pricing; this fallback keeps video/audio tasks priceable meanwhile.
+func buildTaskMediaMeta(c *gin.Context, info *relaycommon.RelayInfo) *types.MediaBillingMeta {
+	if info != nil && info.MediaBilling != nil {
+		return info.MediaBilling
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	seconds := req.Duration
+	if seconds <= 0 && req.Seconds != "" {
+		if parsed, err := strconv.Atoi(req.Seconds); err == nil {
+			seconds = parsed
+		}
+	}
+	return &types.MediaBillingMeta{
+		Count:       1,
+		Size:        req.Size,
+		DurationSec: float64(seconds),
+	}
+}
+
+func validateMediaQuantity(unit string, params billingexpr.TokenParams) error {
+	switch unit {
+	case billingexpr.UnitPerImage:
+		if params.N <= 0 {
+			return fmt.Errorf("image count is required for per_image billing")
+		}
+	case billingexpr.UnitPerSecond:
+		if params.Dur <= 0 {
+			return fmt.Errorf("duration is required for per_second billing")
+		}
+	}
+	return nil
+}
+
+func applyMediaToParams(model string, params *billingexpr.TokenParams, meta *types.MediaBillingMeta) {
+	if params == nil || meta == nil {
+		return
+	}
+	params.N = float64(meta.Count)
+	params.Dur = meta.DurationSec
+	params.FPS = float64(meta.FPS)
+	params.Res, params.Q = media_billing_setting.ResolveTiers(model, meta)
+	if meta.HasFlag("audio") {
+		params.Audio = 1
+	}
+	if meta.HasFlag("video_input") {
+		params.Vin = 1
+	}
+}
+
+// modelPriceHelperTaskTiered prices an asynchronous task with a tiered
+// expression. Task snapshot settlement lands with P0-b; until then the
+// pre-consume amount computed here is final.
+func modelPriceHelperTaskTiered(c *gin.Context, info *relaycommon.RelayInfo, groupRatioInfo hosttypes.GroupRatioInfo) (hosttypes.PriceData, error) {
+	exprStr, ok := billing_setting.GetBillingExpr(info.OriginModelName)
+	if !ok {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
+	}
+	unit, err := billingexpr.ResolveUnit(exprStr, billing_setting.GetBillingUnit(info.OriginModelName))
+	if err != nil {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
+	}
+
+	params := billingexpr.TokenParams{}
+	if mediaMeta := buildTaskMediaMeta(c, info); mediaMeta != nil {
+		applyMediaToParams(info.OriginModelName, &params, mediaMeta)
+	}
+	if err := validateMediaQuantity(unit, params); err != nil {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
+	}
+
+	requestInput := billingexpr.RequestInput{}
+	if input, err := ResolveIncomingBillingExprRequestInput(c, info); err == nil {
+		requestInput = input
+	}
+
+	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, params, requestInput)
+	if err != nil {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s tiered expr run failed: %w", info.OriginModelName, err)
+	}
+
+	quotaBeforeGroup := billingexpr.QuotaFromCost(rawCost, unit, params)
+	quota, clamp := common.QuotaRoundChecked(quotaBeforeGroup * groupRatioInfo.GroupRatio)
+	noteMediaQuotaClamp(info, clamp)
+
+	freeModel := false
+	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && groupRatioInfo.GroupRatio == 0 {
+		quota = 0
+		freeModel = true
+	}
+
+	priceData := hosttypes.PriceData{
+		FreeModel:      freeModel,
+		GroupRatioInfo: groupRatioInfo,
+		Quota:          quota,
+	}
+	info.PriceData = priceData
+	info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{
+		BillingMode:               billing_setting.BillingModeTieredExpr,
+		ModelName:                 info.OriginModelName,
+		ExprString:                exprStr,
+		ExprHash:                  billingexpr.ExprHashString(exprStr),
+		GroupRatio:                groupRatioInfo.GroupRatio,
+		EstimatedQuotaBeforeGroup: quotaBeforeGroup,
+		EstimatedQuotaAfterGroup:  quota,
+		EstimatedTier:             trace.MatchedTier,
+		QuotaPerUnit:              common.QuotaPerUnit,
+		ExprVersion:               billingexpr.ExprVersion(exprStr),
+		BillingUnit:               unit,
+		Media:                     billingexpr.SnapshotMedia(params),
+	}
+	info.BillingRequestInput = &requestInput
+	return priceData, nil
+}
+
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hosttypes.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
+
+	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
+		return modelPriceHelperTaskTiered(c, info, groupRatioInfo)
+	}
+
+	if mediaMeta := buildTaskMediaMeta(c, info); mediaMeta != nil {
+		resolved, ok, err := media_billing_setting.Resolve(info.OriginModelName, mediaMeta)
+		if err != nil {
+			return hosttypes.PriceData{}, err
+		}
+		if ok {
+			return modelPriceHelperMedia(info, resolved, groupRatioInfo, true)
+		}
+	}
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	usePrice := success
@@ -272,9 +495,35 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return hosttypes.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
 
-	estimatedCompletionTokens := meta.MaxTokens
-	if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
-		estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
+	unit, err := billingexpr.ResolveUnit(exprStr, billing_setting.GetBillingUnit(info.OriginModelName))
+	if err != nil {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
+	}
+
+	params := billingexpr.TokenParams{
+		P:   float64(promptTokens),
+		Len: float64(promptTokens),
+	}
+	if meta != nil {
+		if mediaMeta := meta.MediaBilling; mediaMeta != nil {
+			applyMediaToParams(info.OriginModelName, &params, mediaMeta)
+		}
+	}
+
+	// Completion estimation only applies to token-priced expressions; media
+	// units are fully determined by count/duration.
+	estimatedCompletionTokens := 0
+	if unit == billingexpr.UnitPerMillionTokens {
+		if meta != nil {
+			estimatedCompletionTokens = meta.MaxTokens
+		}
+		if estimatedCompletionTokens == 0 && groupRatioInfo.GroupRatio != 0 {
+			estimatedCompletionTokens = defaultTieredPreConsumeMaxTokens
+		}
+	}
+	params.C = float64(estimatedCompletionTokens)
+	if err := validateMediaQuantity(unit, params); err != nil {
+		return hosttypes.PriceData{}, fmt.Errorf("model %s: %w", info.OriginModelName, err)
 	}
 
 	requestInput, err := ResolveIncomingBillingExprRequestInput(c, info)
@@ -282,17 +531,12 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return hosttypes.PriceData{}, err
 	}
 
-	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{
-		P:   float64(promptTokens),
-		C:   float64(estimatedCompletionTokens),
-		Len: float64(promptTokens),
-	}, requestInput)
+	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, params, requestInput)
 	if err != nil {
 		return hosttypes.PriceData{}, fmt.Errorf("model %s tiered expr run failed: %w", info.OriginModelName, err)
 	}
 
-	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.
-	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
+	quotaBeforeGroup := billingexpr.QuotaFromCost(rawCost, unit, params)
 	preConsumedQuota, err := billingexpr.QuotaRoundStrict(quotaBeforeGroup * groupRatioInfo.GroupRatio)
 	if err != nil {
 		return hosttypes.PriceData{}, err
@@ -320,6 +564,8 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		EstimatedTier:             trace.MatchedTier,
 		QuotaPerUnit:              common.QuotaPerUnit,
 		ExprVersion:               billingexpr.ExprVersion(exprStr),
+		BillingUnit:               unit,
+		Media:                     billingexpr.SnapshotMedia(params),
 	}
 	info.TieredBillingSnapshot = snapshot
 	info.BillingRequestInput = &requestInput

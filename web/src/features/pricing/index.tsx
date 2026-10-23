@@ -50,8 +50,6 @@ export function Pricing() {
     endpointMap,
     autoGroups,
     isLoading,
-    priceRate,
-    usdExchangeRate,
   } = usePricingData()
 
   const {
@@ -60,21 +58,21 @@ export function Pricing() {
     vendorFilter,
     groupFilter,
     quotaTypeFilter,
+    mediaKindFilter,
     endpointTypeFilter,
     tagFilter,
     tokenUnit,
     viewMode,
-    showRechargePrice,
     setSearchInput,
     setSortBy,
     setVendorFilter,
     setGroupFilter,
     setQuotaTypeFilter,
+    setMediaKindFilter,
     setEndpointTypeFilter,
     setTagFilter,
     setTokenUnit,
     setViewMode,
-    setShowRechargePrice,
     filteredModels,
     hasActiveFilters,
     activeFilterCount,
@@ -126,10 +124,7 @@ export function Pricing() {
         <ModelCardGrid
           models={filteredModels}
           onModelClick={handleModelClick}
-          priceRate={priceRate}
-          usdExchangeRate={usdExchangeRate}
           tokenUnit={tokenUnit}
-          showRechargePrice={showRechargePrice}
           selectedGroup={groupFilter}
         />
       )
@@ -138,10 +133,7 @@ export function Pricing() {
     return (
       <PricingTable
         models={filteredModels}
-        priceRate={priceRate}
-        usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}
-        showRechargePrice={showRechargePrice}
         selectedGroup={groupFilter}
         onModelClick={handleModelClick}
       />
@@ -205,11 +197,13 @@ export function Pricing() {
           <div className='grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)]'>
             <PricingSidebar
               quotaTypeFilter={quotaTypeFilter}
+              mediaKindFilter={mediaKindFilter}
               endpointTypeFilter={endpointTypeFilter}
               vendorFilter={vendorFilter}
               groupFilter={groupFilter}
               tagFilter={tagFilter}
               onQuotaTypeChange={setQuotaTypeFilter}
+              onMediaKindChange={setMediaKindFilter}
               onEndpointTypeChange={setEndpointTypeFilter}
               onVendorChange={setVendorFilter}
               onGroupChange={setGroupFilter}
@@ -232,16 +226,16 @@ export function Pricing() {
                 onSortChange={setSortBy}
                 tokenUnit={tokenUnit}
                 onTokenUnitChange={setTokenUnit}
-                showRechargePrice={showRechargePrice}
-                onRechargePriceChange={setShowRechargePrice}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
                 quotaTypeFilter={quotaTypeFilter}
+                mediaKindFilter={mediaKindFilter}
                 endpointTypeFilter={endpointTypeFilter}
                 vendorFilter={vendorFilter}
                 groupFilter={groupFilter}
                 tagFilter={tagFilter}
                 onQuotaTypeChange={setQuotaTypeFilter}
+                onMediaKindChange={setMediaKindFilter}
                 onEndpointTypeChange={setEndpointTypeFilter}
                 onVendorChange={setVendorFilter}
                 onGroupChange={setGroupFilter}
@@ -276,10 +270,7 @@ export function Pricing() {
                 >) || {}
               }
               autoGroups={autoGroups || []}
-              priceRate={priceRate ?? 1}
-              usdExchangeRate={usdExchangeRate ?? 1}
               tokenUnit={tokenUnit}
-              showRechargePrice={showRechargePrice}
             />
           )}
         </PageTransition>

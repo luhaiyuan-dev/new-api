@@ -36,7 +36,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { formatBillingCNY } from '@/lib/currency'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -152,9 +152,9 @@ function buildTypeDetailSegments(
 
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const formatPrice = (price: number) =>
-    `${formatBillingCurrencyFromUSD(price, priceOpts)}/M`
+    `${formatBillingCNY(price, priceOpts)}/M`
   const formatPriceCompact = (price: number) =>
-    formatBillingCurrencyFromUSD(price, priceOpts)
+    formatBillingCNY(price, priceOpts)
   const formatPriceList = (prices: string[], showUnit: boolean) => {
     const text = prices.join(' / ')
     return showUnit ? `${text}/M` : text
@@ -218,14 +218,14 @@ function buildTypeDetailSegments(
     const isPerCall = isPerCallBilling(modelPrice)
     if (isPerCall && modelPrice != null) {
       segments.push({
-        text: `${t('Per-call')} · ${formatBillingCurrencyFromUSD(modelPrice, priceOpts)}`,
+        text: `${t('Per-call')} · ${formatBillingCNY(modelPrice, priceOpts)}`,
       })
     } else if (other.model_ratio != null) {
-      const inputPriceUSD = other.model_ratio * 2.0
-      const baseEntries = [formatPriceCompact(inputPriceUSD)]
+      const inputPrice = other.model_ratio * 2.0
+      const baseEntries = [formatPriceCompact(inputPrice)]
       if (other.completion_ratio != null) {
         baseEntries.push(
-          formatPriceCompact(inputPriceUSD * other.completion_ratio)
+          formatPriceCompact(inputPrice * other.completion_ratio)
         )
       }
       segments.push({
@@ -235,14 +235,14 @@ function buildTypeDetailSegments(
       if (hasAnyCacheTokens(other)) {
         const cacheEntries = [
           other.cache_ratio != null && other.cache_ratio !== 1
-            ? formatPriceCompact(inputPriceUSD * other.cache_ratio)
+            ? formatPriceCompact(inputPrice * other.cache_ratio)
             : null,
           other.cache_creation_ratio != null && other.cache_creation_ratio !== 1
-            ? formatPriceCompact(inputPriceUSD * other.cache_creation_ratio)
+            ? formatPriceCompact(inputPrice * other.cache_creation_ratio)
             : null,
           other.cache_creation_ratio_1h != null &&
           other.cache_creation_ratio_1h !== 0
-            ? formatPriceCompact(inputPriceUSD * other.cache_creation_ratio_1h)
+            ? formatPriceCompact(inputPrice * other.cache_creation_ratio_1h)
             : null,
         ].filter(Boolean) as string[]
 

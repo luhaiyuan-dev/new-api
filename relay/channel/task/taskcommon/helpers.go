@@ -3,10 +3,13 @@ package taskcommon
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -84,6 +87,39 @@ type BaseBilling struct{}
 // EstimateBilling returns nil (no extra ratios; use base model price).
 func (BaseBilling) EstimateBilling(_ *gin.Context, _ *relaycommon.RelayInfo) map[string]float64 {
 	return nil
+}
+
+// EstimateMediaBilling derives media dimensions from the parsed task request.
+// Models configured in media_billing_setting are priced from these dimensions;
+// unconfigured models keep the legacy EstimateBilling path.
+func (BaseBilling) EstimateMediaBilling(c *gin.Context, _ *relaycommon.RelayInfo) *types.MediaBillingMeta {
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	seconds := req.Duration
+	if seconds <= 0 && req.Seconds != "" {
+		if parsed, err := strconv.Atoi(req.Seconds); err == nil {
+			seconds = parsed
+		}
+	}
+	if seconds > relaycommon.MaxTaskDurationSeconds {
+		seconds = relaycommon.MaxTaskDurationSeconds
+	}
+
+	meta := &types.MediaBillingMeta{
+		Kind:        types.MediaKindVideo,
+		Count:       1,
+		DurationSec: float64(seconds),
+	}
+	if req.Size != "" {
+		if strings.ContainsAny(req.Size, "*xX") {
+			meta.Size = req.Size
+		} else {
+			meta.Resolution = req.Size
+		}
+	}
+	return meta
 }
 
 // AdjustBillingOnSubmit returns nil (no submit-time adjustment).

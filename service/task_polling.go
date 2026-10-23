@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -651,10 +652,28 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		RecalculateTaskQuota(ctx, task, actualQuota, "adaptor计费调整")
 		return
 	}
-	// 2. 回退到 token 重算
+
+	bc := task.PrivateData.BillingContext
+	// 2. 媒体价目表：上游返回实际用量才重算，否则保持预扣额度。
+	//    不回落 token 重算，避免按秒/按张定价的模型被 ModelRatio 二次计价。
+	if bc != nil && bc.MediaBilling != nil {
+		if taskResult.BillingUnits > 0 && RecalculateTaskQuotaByMedia(ctx, task, taskResult.BillingUnits) {
+			return
+		}
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 未返回实际媒体用量，保持预扣额度", task.TaskID))
+		return
+	}
+
+	// 3. 分层表达式任务暂不做差额结算（表达式快照未持久化）
+	if bc != nil && bc.BillingMode == billing_setting.BillingModeTieredExpr {
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 使用分层表达式计费，暂不做差额结算", task.TaskID))
+		return
+	}
+
+	// 4. 回退到 token 重算
 	if taskResult.TotalTokens > 0 {
 		RecalculateTaskQuotaByTokens(ctx, task, taskResult.TotalTokens)
 		return
 	}
-	// 3. 无调整，保持预扣额度
+	// 5. 无调整，保持预扣额度
 }

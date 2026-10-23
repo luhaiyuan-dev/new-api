@@ -26,11 +26,7 @@ For commercial licensing, please contact support@quantumnous.com
 export const DEFAULT_QUOTA_WARNING_THRESHOLD = 500000
 
 /**
- * Notification methods
+ * Notification methods exposed in the UI.
+ * Only email is offered; stored legacy values (webhook/bark/gotify) fall back to email.
  */
-export const NOTIFICATION_METHODS = [
-  { value: 'email' as const, label: 'Email' },
-  { value: 'webhook' as const, label: 'Webhook' },
-  { value: 'bark' as const, label: 'Bark' },
-  { value: 'gotify' as const, label: 'Gotify' },
-] as const
+export const NOTIFICATION_METHODS = [{ value: 'email' as const, label: 'Email' }]

@@ -120,13 +120,8 @@ export interface SystemStatus {
     turnstile_site_key?: string
     email_verification?: boolean
     self_use_mode_enabled?: boolean
-    display_in_currency?: boolean
     display_token_stat_enabled?: boolean
     quota_per_unit?: number
-    quota_display_type?: string
-    usd_exchange_rate?: number
-    custom_currency_symbol?: string
-    custom_currency_exchange_rate?: number
     demo_site_enabled?: boolean
     user_agreement_enabled?: boolean
     privacy_policy_enabled?: boolean
@@ -165,13 +160,8 @@ export interface SystemStatus {
   turnstile_site_key?: string
   email_verification?: boolean
   self_use_mode_enabled?: boolean
-  display_in_currency?: boolean
   display_token_stat_enabled?: boolean
   quota_per_unit?: number
-  quota_display_type?: string
-  usd_exchange_rate?: number
-  custom_currency_symbol?: string
-  custom_currency_exchange_rate?: number
   demo_site_enabled?: boolean
   user_agreement_enabled?: boolean
   privacy_policy_enabled?: boolean

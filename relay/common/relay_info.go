@@ -151,6 +151,11 @@ type RelayInfo struct {
 
 	PriceData hosttypes.PriceData
 
+	// MediaBilling carries media dimensions reported by a channel adaptor
+	// (image/video size, quality, duration, count). Pricing resolves these
+	// against media_billing_setting; nil means no media dimensions were reported.
+	MediaBilling *types.MediaBillingMeta
+
 	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
 	// supported single-request bound (or NaN fallback) while computing this request's charge.
 	// It is surfaced onto the consume/task log's admin_info for auditing.
@@ -957,6 +962,9 @@ type TaskInfo struct {
 	Progress         string `json:"progress,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
 	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	// BillingUnits 是上游实际计费数量（视频秒数、图片张数）。用于媒体价目表的差额结算；
+	// 0 表示上游未返回可用用量，结算阶段保持预扣额度。
+	BillingUnits float64 `json:"billing_units,omitempty"`
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

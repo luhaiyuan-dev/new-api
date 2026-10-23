@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 
 import { useIsAdmin } from '@/hooks/use-admin'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getUserBillingHistory,
@@ -36,6 +37,8 @@ import type { TopupRecord } from '../types'
 // ============================================================================
 
 interface UseBillingHistoryOptions {
+  /** Load history only while its dialog is open. */
+  enabled?: boolean
   /** Initial page number */
   initialPage?: number
   /** Initial page size */
@@ -43,11 +46,15 @@ interface UseBillingHistoryOptions {
 }
 
 export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
-  const { initialPage = 1, initialPageSize = 10 } = options
+  const { enabled = true, initialPage = 1, initialPageSize = 10 } = options
   const isAdmin = useIsAdmin()
+  const sessionSID = useAuthStore((state) => state.auth.session?.sid)
 
-  const [records, setRecords] = useState<TopupRecord[]>([])
-  const [total, setTotal] = useState(0)
+  const [history, setHistory] = useState<{
+    sessionSID?: string
+    records: TopupRecord[]
+    total: number
+  }>({ records: [], total: 0 })
   const [page, setPage] = useState(initialPage)
   const [pageSize, setPageSize] = useState(initialPageSize)
   const [keyword, setKeyword] = useState('')
@@ -60,6 +67,14 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
    * Fetch billing history
    */
   const fetchBillingHistory = useCallback(async () => {
+    if (
+      !enabled ||
+      !sessionSID ||
+      useAuthStore.getState().auth.session?.sid !== sessionSID
+    ) {
+      return
+    }
+
     const requestId = ++requestIdRef.current
     setLoading(true)
     try {
@@ -67,32 +82,46 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
         ? await getAllBillingHistory(page, pageSize, debouncedKeyword)
         : await getUserBillingHistory(page, pageSize, debouncedKeyword)
 
-      if (requestId !== requestIdRef.current) return
+      if (
+        requestId !== requestIdRef.current ||
+        useAuthStore.getState().auth.session?.sid !== sessionSID
+      ) {
+        return
+      }
 
       if (isApiSuccess(response) && response.data) {
-        setRecords(response.data.items || [])
-        setTotal(response.data.total || 0)
+        setHistory({
+          sessionSID,
+          records: response.data.items || [],
+          total: response.data.total || 0,
+        })
       } else {
         toast.error(
           response.message || i18next.t('Failed to load billing history')
         )
-        setRecords([])
-        setTotal(0)
+        setHistory({ sessionSID, records: [], total: 0 })
       }
     } catch (error) {
-      if (requestId !== requestIdRef.current) return
+      if (
+        requestId !== requestIdRef.current ||
+        useAuthStore.getState().auth.session?.sid !== sessionSID
+      ) {
+        return
+      }
 
       // eslint-disable-next-line no-console
       console.error('Failed to fetch billing history:', error)
       toast.error(i18next.t('Failed to load billing history'))
-      setRecords([])
-      setTotal(0)
+      setHistory({ sessionSID, records: [], total: 0 })
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (
+        requestId === requestIdRef.current &&
+        useAuthStore.getState().auth.session?.sid === sessionSID
+      ) {
         setLoading(false)
       }
     }
-  }, [debouncedKeyword, isAdmin, page, pageSize])
+  }, [debouncedKeyword, enabled, isAdmin, page, pageSize, sessionSID])
 
   /**
    * Complete a pending order (admin only)
@@ -154,18 +183,29 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
 
   // Fetch data after the search draft has settled.
   useEffect(() => {
+    if (!enabled || !sessionSID) return
     if (keyword !== debouncedKeyword) return
 
-    fetchBillingHistory()
-  }, [debouncedKeyword, fetchBillingHistory, keyword])
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) void fetchBillingHistory()
+    })
+    return () => {
+      cancelled = true
+      requestIdRef.current += 1
+    }
+  }, [debouncedKeyword, enabled, fetchBillingHistory, keyword, sessionSID])
+
+  const historyVisible =
+    enabled && !!sessionSID && history.sessionSID === sessionSID
 
   return {
-    records,
-    total,
+    records: historyVisible ? history.records : [],
+    total: historyVisible ? history.total : 0,
     page,
     pageSize,
     keyword,
-    loading,
+    loading: enabled && !!sessionSID && loading,
     completing,
     isAdmin,
     handlePageChange,

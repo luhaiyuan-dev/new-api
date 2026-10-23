@@ -3,6 +3,7 @@ package billingexpr
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -65,6 +66,25 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, params TokenP
 		"img_o": params.ImgO,
 		"ai":    params.AI,
 		"ao":    params.AO,
+		"n":     params.N,
+		"dur":   params.Dur,
+		"res":   params.Res,
+		"q":     params.Q,
+		"w":     params.W,
+		"h":     params.H,
+		"fps":   params.FPS,
+		"audio": params.Audio,
+		"vin":   params.Vin,
+		"pick":  pickValue,
+		"per_image": func(value float64) float64 {
+			return value
+		},
+		"per_second": func(value float64) float64 {
+			return value
+		},
+		"per_call": func(value float64) float64 {
+			return value
+		},
 		"tier": func(name string, value float64) float64 {
 			trace.MatchedTier = name
 			trace.Cost = value
@@ -141,6 +161,58 @@ func timeInZone(tz string) time.Time {
 		return time.Now().UTC()
 	}
 	return time.Now().In(loc)
+}
+
+// pickValue looks up key in a map literal and returns fallback when the map
+// does not contain it. It accepts both map[string]float64 and
+// map[string]interface{} so expressions can use {"1k": 0.3} literals.
+func pickValue(source interface{}, key string, fallback float64) float64 {
+	if source == nil {
+		return fallback
+	}
+	key = strings.TrimSpace(key)
+	value := reflect.ValueOf(source)
+	if value.Kind() != reflect.Map {
+		return fallback
+	}
+	for _, mapKey := range value.MapKeys() {
+		if fmt.Sprint(mapKey.Interface()) != key {
+			continue
+		}
+		return numericValue(value.MapIndex(mapKey).Interface(), fallback)
+	}
+	return fallback
+}
+
+func numericValue(value interface{}, fallback float64) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	case int:
+		return float64(number)
+	case int8:
+		return float64(number)
+	case int16:
+		return float64(number)
+	case int32:
+		return float64(number)
+	case int64:
+		return float64(number)
+	case uint:
+		return float64(number)
+	case uint8:
+		return float64(number)
+	case uint16:
+		return float64(number)
+	case uint32:
+		return float64(number)
+	case uint64:
+		return float64(number)
+	default:
+		return fallback
+	}
 }
 
 func normalizeHeaders(headers map[string]string) map[string]string {

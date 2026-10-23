@@ -313,8 +313,11 @@ export function ModelMutateDrawer({
       ExposeRatioEnabled: false,
       'billing_setting.billing_mode': '{}',
       'billing_setting.billing_expr': '{}',
+      'billing_setting.billing_unit': '{}',
+      'media_billing_setting.enabled': false,
+      'media_billing_setting.unknown_tier_policy': 'fallback_base',
+      'media_billing_setting.models': '{}',
       'tool_price_setting.prices': '{}',
-      TopupGroupRatio: '',
       GroupRatio: '',
       UserUsableGroups: '',
       GroupGroupRatio: '',
@@ -1015,7 +1018,7 @@ export function ModelMutateDrawer({
                   name='price'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Fixed price (USD)')}</FormLabel>
+                      <FormLabel>{t('Fixed price (CNY)')}</FormLabel>
                       <FormControl>
                         <Input
                           type='text'
@@ -1031,7 +1034,7 @@ export function ModelMutateDrawer({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Cost in USD per request, regardless of tokens used.'
+                          'Cost in CNY per request, regardless of tokens used.'
                         )}
                       </FormDescription>
                       <FormMessage />
@@ -1057,7 +1060,7 @@ export function ModelMutateDrawer({
                       <div className='flex items-center space-x-2'>
                         <RadioGroupItem value='price' id='price' />
                         <Label htmlFor='price' className='font-normal'>
-                          {t('Price mode (USD per 1M tokens)')}
+                          {t('Price mode (CNY per 1M tokens)')}
                         </Label>
                       </div>
                     </RadioGroup>
@@ -1096,7 +1099,7 @@ export function ModelMutateDrawer({
                             <FormDescription>
                               {field.value &&
                               !Number.isNaN(Number.parseFloat(field.value))
-                                ? `Calculated price: $${(Number.parseFloat(field.value) * 2).toFixed(4)} per 1M tokens`
+                                ? `Calculated price: ¥${(Number.parseFloat(field.value) * 2).toFixed(4)} per 1M tokens`
                                 : t('Multiplier for prompt tokens.')}
                             </FormDescription>
                             <FormMessage />
@@ -1138,7 +1141,7 @@ export function ModelMutateDrawer({
                               !Number.isNaN(Number.parseFloat(field.value)) &&
                               promptPrice &&
                               !Number.isNaN(Number.parseFloat(promptPrice))
-                                ? `Calculated price: $${(Number.parseFloat(promptPrice) * Number.parseFloat(field.value)).toFixed(4)} per 1M tokens`
+                                ? `Calculated price: ¥${(Number.parseFloat(promptPrice) * Number.parseFloat(field.value)).toFixed(4)} per 1M tokens`
                                 : t('Multiplier for completion tokens.')}
                             </FormDescription>
                             <FormMessage />
@@ -1149,7 +1152,7 @@ export function ModelMutateDrawer({
                   ) : (
                     <div className='space-y-4'>
                       <div className='space-y-2'>
-                        <Label>{t('Prompt price ($/1M tokens)')}</Label>
+                        <Label>{t('Prompt price (¥/1M tokens)')}</Label>
                         <Input
                           type='text'
                           placeholder='2.0'
@@ -1167,7 +1170,7 @@ export function ModelMutateDrawer({
                       </div>
 
                       <div className='space-y-2'>
-                        <Label>{t('Completion price ($/1M tokens)')}</Label>
+                        <Label>{t('Completion price (¥/1M tokens)')}</Label>
                         <Input
                           type='text'
                           placeholder='4.0'

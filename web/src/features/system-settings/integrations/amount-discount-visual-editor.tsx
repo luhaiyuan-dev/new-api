@@ -17,19 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
-import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
-import { StatusBadge } from '@/components/status-badge'
+import { staticDataTableClassNames } from '@/components/data-table/static/static-data-table-classnames'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isObjectRecord } from '../utils/json-validators'
 import {
   AmountDiscountDialog,
-  type AmountDiscountData,
+  type DiscountTier,
 } from './amount-discount-dialog'
 
 type AmountDiscountVisualEditorProps = {
@@ -37,227 +37,169 @@ type AmountDiscountVisualEditorProps = {
   onChange: (value: string) => void
 }
 
-export function AmountDiscountVisualEditor({
-  value,
-  onChange,
-}: AmountDiscountVisualEditorProps) {
+export function AmountDiscountVisualEditor(
+  props: AmountDiscountVisualEditorProps
+) {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editData, setEditData] = useState<AmountDiscountData | null>(null)
+  const [editingTier, setEditingTier] = useState<DiscountTier | null>(null)
 
-  const discounts = useMemo(() => {
-    const parsed = safeJsonParseWithValidation<Record<string, unknown>>(value, {
-      fallback: {},
-      validator: isObjectRecord,
-      validatorMessage: 'Amount discount must be a JSON object',
-      context: 'amount discounts',
-    })
+  const tiers = useMemo(() => {
+    const parsed = safeJsonParseWithValidation<Record<string, unknown>>(
+      props.value,
+      {
+        fallback: {},
+        validator: isObjectRecord,
+        validatorMessage: t('Amount discount must be a JSON object'),
+        context: 'amount discounts',
+      }
+    )
 
     return Object.entries(parsed)
       .map(([amount, rate]) => ({
         amount: Number.parseInt(amount, 10),
-        discountRate:
-          typeof rate === 'number' ? rate : Number.parseFloat(String(rate)),
+        rate: Number(rate),
       }))
-      .filter((item) => !isNaN(item.amount) && !isNaN(item.discountRate))
+      .filter(
+        (tier) =>
+          Number.isInteger(tier.amount) &&
+          tier.amount > 0 &&
+          Number.isFinite(tier.rate) &&
+          tier.rate > 0 &&
+          tier.rate <= 1
+      )
       .sort((a, b) => a.amount - b.amount)
-  }, [value])
+  }, [props.value, t])
 
-  const handleSave = (data: AmountDiscountData) => {
-    const discountObject = safeJsonParseWithValidation<Record<string, unknown>>(
-      value,
-      {
-        fallback: {},
-        validator: isObjectRecord,
-        silent: true,
-      }
-    )
+  const existingAmounts = useMemo(
+    () =>
+      tiers
+        .filter((tier) => tier.amount !== editingTier?.amount)
+        .map((tier) => tier.amount),
+    [tiers, editingTier]
+  )
 
-    if (editData && editData.amount !== data.amount) {
-      delete discountObject[editData.amount.toString()]
+  const commit = (nextTiers: DiscountTier[]) => {
+    const record: Record<string, number> = {}
+    for (const tier of nextTiers) {
+      record[String(tier.amount)] = tier.rate
     }
-
-    discountObject[data.amount.toString()] = data.discountRate
-
-    onChange(JSON.stringify(discountObject, null, 2))
+    props.onChange(JSON.stringify(record, null, 2))
   }
 
-  const handleDelete = (amount: number) => {
-    const discountObject = safeJsonParseWithValidation<Record<string, unknown>>(
-      value,
-      {
-        fallback: {},
-        validator: isObjectRecord,
-        silent: true,
-      }
+  const handleCreate = () => {
+    setEditingTier(null)
+    setDialogOpen(true)
+  }
+
+  const handleEdit = (tier: DiscountTier) => {
+    setEditingTier(tier)
+    setDialogOpen(true)
+  }
+
+  const handleSave = (tier: DiscountTier) => {
+    const nextTiers = [...tiers.filter((item) => item.amount !== editingTier?.amount), tier].sort(
+      (a, b) => a.amount - b.amount
     )
-
-    delete discountObject[amount.toString()]
-
-    onChange(JSON.stringify(discountObject, null, 2))
+    commit(nextTiers)
+    setEditingTier(null)
   }
 
-  const handleEdit = (discount: AmountDiscountData) => {
-    setEditData(discount)
-    setDialogOpen(true)
-  }
-
-  const handleAdd = () => {
-    setEditData(null)
-    setDialogOpen(true)
-  }
-
-  const formatPercentage = (rate: number) => {
-    if (rate >= 1) return '0%'
-    const discount = Math.round((1 - rate) * 100)
-    return `${discount}%`
+  const handleRemove = (amount: number) => {
+    commit(tiers.filter((tier) => tier.amount !== amount))
   }
 
   return (
-    <div className='space-y-4'>
-      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-        <p className='text-muted-foreground text-sm'>
-          {t('Configure discount rates based on recharge amounts')}
-        </p>
+    <div className='space-y-3'>
+      <div className='flex justify-end'>
         <Button
           type='button'
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            handleAdd()
-          }}
+          variant='outline'
           size='sm'
-          className='w-full sm:w-auto'
+          onClick={handleCreate}
+          className='h-8 w-full shrink-0 sm:w-auto'
         >
-          <Plus className='h-4 w-4 sm:mr-2' />
-          <span className='sm:inline'>{t('Add discount tier')}</span>
+          <Plus className='size-3.5' />
+          {t('Add discount')}
         </Button>
       </div>
 
-      {discounts.length === 0 ? (
-        <div className='text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm'>
-          {t(
-            'No discount tiers configured. Click "Add discount tier" to get started.'
-          )}
-        </div>
-      ) : (
-        <div className='rounded-md border'>
-          {/* Desktop table view */}
-          <StaticDataTable
-            className='hidden rounded-none border-0 sm:block'
-            data={discounts}
-            getRowKey={(discount) => discount.amount}
-            columns={[
-              {
-                id: 'amount',
-                header: t('Recharge Amount'),
-                cell: (discount) => (
-                  <span className='font-mono text-sm'>${discount.amount}</span>
-                ),
-              },
-              {
-                id: 'discount-rate',
-                header: t('Discount Rate'),
-                cell: (discount) => (
-                  <code className='bg-muted rounded px-1.5 py-0.5 text-sm'>
-                    {discount.discountRate.toFixed(2)}
-                  </code>
-                ),
-              },
-              {
-                id: 'discount',
-                header: t('Discount'),
-                cell: (discount) => (
-                  <StatusBadge
-                    variant={discount.discountRate < 1 ? 'info' : 'neutral'}
-                    className='font-mono'
-                    copyable={false}
-                  >
-                    {formatPercentage(discount.discountRate)} {t('off')}
-                  </StatusBadge>
-                ),
-              },
-              {
-                id: 'actions',
-                header: t('Actions'),
-                className: 'text-right',
-                cellClassName: 'text-right',
-                cell: (discount) => (
-                  <StaticRowActions
-                    editLabel={t('Edit')}
-                    deleteLabel={t('Delete')}
-                    menuLabel={t('Open menu')}
-                    onEdit={() => handleEdit(discount)}
-                    onDelete={() => handleDelete(discount.amount)}
-                  />
-                ),
-              },
-            ]}
-          />
-
-          {/* Mobile card view */}
-          <div className='divide-y sm:hidden'>
-            {discounts.map((discount) => (
-              <div key={discount.amount} className='p-4'>
-                <div className='mb-3 flex items-start justify-between'>
-                  <div className='flex-1'>
-                    <div className='mb-2 font-mono text-base font-medium'>
-                      ${discount.amount}
-                    </div>
-                    <StatusBadge
-                      variant={discount.discountRate < 1 ? 'info' : 'neutral'}
-                      className='font-mono'
-                      copyable={false}
-                    >
-                      {formatPercentage(discount.discountRate)} {t('off')}
-                    </StatusBadge>
-                  </div>
-                  <div className='flex gap-1'>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        handleEdit(discount)
-                      }}
-                    >
-                      <Pencil className='h-4 w-4' />
-                    </Button>
-                    <Button
-                      type='button'
-                      variant='ghost'
-                      size='sm'
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        handleDelete(discount.amount)
-                      }}
-                    >
-                      <Trash2 className='h-4 w-4' />
-                    </Button>
-                  </div>
-                </div>
-                <div className='text-sm'>
-                  <span className='text-muted-foreground'>
-                    {t('Discount Rate:')}{' '}
-                  </span>
-                  <code className='bg-muted rounded px-1.5 py-0.5 text-xs'>
-                    {discount.discountRate.toFixed(2)}
-                  </code>
-                </div>
+      <StaticDataTable<DiscountTier>
+        tableClassName='[&_tbody_tr]:h-auto'
+        data={tiers}
+        getRowKey={(tier) => tier.amount}
+        emptyContent={
+          <span className='text-sm'>
+            {t('No discount tiers yet. Add one to offer recharge discounts.')}
+          </span>
+        }
+        emptyClassName='text-muted-foreground py-10'
+        headerRowClassName={staticDataTableClassNames.mutedHeaderRow}
+        columns={[
+          {
+            id: 'amount',
+            header: t('Recharge Amount'),
+            className: 'w-[32%] px-4',
+            cellClassName: 'px-4 py-3',
+            cell: (tier) => (
+              <span className='font-mono text-sm font-medium tabular-nums'>
+                ¥{tier.amount}
+              </span>
+            ),
+          },
+          {
+            id: 'rate',
+            header: t('Discount Rate'),
+            className: 'w-[32%] px-4',
+            cellClassName: 'px-4 py-3',
+            cell: (tier) => (
+              <span className='font-mono text-sm tabular-nums'>
+                {tier.rate.toFixed(2)}
+              </span>
+            ),
+          },
+          {
+            id: 'actions',
+            header: t('Actions'),
+            className: cn(staticDataTableClassNames.actionHeaderCell, 'px-4'),
+            cellClassName: cn(
+              staticDataTableClassNames.actionCell,
+              'px-4 py-3'
+            ),
+            cell: (tier) => (
+              <div className='flex justify-end gap-1'>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon-sm'
+                  onClick={() => handleEdit(tier)}
+                  className='text-muted-foreground hover:text-foreground'
+                  aria-label={t('Edit discount tier')}
+                >
+                  <Pencil className='h-3.5 w-3.5' />
+                </Button>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon-sm'
+                  onClick={() => handleRemove(tier.amount)}
+                  className='text-muted-foreground hover:text-destructive'
+                  aria-label={t('Delete discount tier')}
+                >
+                  <Trash2 className='h-3.5 w-3.5' />
+                </Button>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            ),
+          },
+        ]}
+      />
 
       <AmountDiscountDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        onSave={handleSave}
-        editData={editData}
+        onSubmit={handleSave}
+        tier={editingTier}
+        existingAmounts={existingAmounts}
       />
     </div>
   )

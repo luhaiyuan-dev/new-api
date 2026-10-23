@@ -20,7 +20,7 @@ import type { TFunction } from 'i18next'
 import { z } from 'zod'
 
 import {
-  parseQuotaFromDollars,
+  parseQuotaFromYuan,
   quotaUnitsToEditableAmount,
 } from '@/lib/format'
 
@@ -81,7 +81,7 @@ export function transformFormDataToPayload(
 ): RedemptionFormData {
   return {
     name: data.name,
-    quota: parseQuotaFromDollars(data.quota_dollars),
+    quota: parseQuotaFromYuan(data.quota_dollars),
     expired_time: data.expired_time
       ? Math.floor(data.expired_time.getTime() / 1000)
       : 0,

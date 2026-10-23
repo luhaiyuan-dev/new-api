@@ -22,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/media_billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
 
@@ -72,6 +73,7 @@ var pricingSyncFields = []string{
 	"model_price",
 	billing_setting.BillingModeField,
 	billing_setting.BillingExprField,
+	billing_setting.BillingUnitField,
 }
 
 var numericPricingSyncFields = map[string]bool{
@@ -131,11 +133,17 @@ func normalizeSyncValue(field string, value any) any {
 	return value
 }
 
+// mediaModelsSyncField carries the media price table through ratio sync. Media
+// specs are objects, so they travel in their own response section instead of
+// the per-model ratio diff pipeline.
+const mediaModelsSyncField = "media_billing_setting.models"
+
 func getLocalPricingSyncData() map[string]any {
 	data := billing_setting.GetPricingSyncData(map[string]any(ratio_setting.GetExposedData()))
 	data["image_ratio"] = ratio_setting.GetImageRatioCopy()
 	data["audio_ratio"] = ratio_setting.GetAudioRatioCopy()
 	data["audio_completion_ratio"] = ratio_setting.GetAudioCompletionRatioCopy()
+	data[mediaModelsSyncField] = media_billing_setting.GetModelsCopy()
 	return data
 }
 
@@ -523,12 +531,14 @@ func FetchUpstreamRatios(c *gin.Context) {
 	}
 
 	differences := buildDifferences(localData, successfulChannels)
+	mediaDifferences := buildMediaDifferences(media_billing_setting.GetModelsCopy(), successfulChannels)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"differences":  differences,
-			"test_results": testResults,
+			"differences":       differences,
+			"media_differences": mediaDifferences,
+			"test_results":      testResults,
 		},
 	})
 }
@@ -695,6 +705,88 @@ func buildDifferences(localData map[string]any, successfulChannels []struct {
 	return differences
 }
 
+// buildMediaDifferences reports per-model media price specs that differ between
+// this instance and the selected upstreams. Media specs are objects, so they
+// cannot share the numeric per-model diff pipeline and get their own section.
+func buildMediaDifferences(localModels map[string]media_billing_setting.MediaModelSpec, successfulChannels []struct {
+	name string
+	data map[string]any
+}) map[string]map[string]any {
+	differences := make(map[string]map[string]any)
+	if len(successfulChannels) == 0 {
+		return differences
+	}
+
+	upstreamModels := make(map[string]map[string]media_billing_setting.MediaModelSpec, len(successfulChannels))
+	allModels := make(map[string]struct{}, len(localModels))
+	for modelName := range localModels {
+		allModels[modelName] = struct{}{}
+	}
+	for _, channel := range successfulChannels {
+		decoded := decodeMediaModels(channel.data[mediaModelsSyncField])
+		if len(decoded) == 0 {
+			continue
+		}
+		upstreamModels[channel.name] = decoded
+		for modelName := range decoded {
+			allModels[modelName] = struct{}{}
+		}
+	}
+	if len(upstreamModels) == 0 {
+		return differences
+	}
+
+	for modelName := range allModels {
+		localSpec, hasLocal := localModels[modelName]
+		upstreams := make(map[string]media_billing_setting.MediaModelSpec)
+		changed := false
+		for channelName, models := range upstreamModels {
+			spec, exists := models[modelName]
+			if !exists {
+				continue
+			}
+			upstreams[channelName] = spec
+			if !hasLocal || !mediaSpecEqual(localSpec, spec) {
+				changed = true
+			}
+		}
+		if len(upstreams) == 0 || !changed {
+			continue
+		}
+		entry := map[string]any{"upstreams": upstreams}
+		if hasLocal {
+			entry["local"] = localSpec
+		}
+		differences[modelName] = entry
+	}
+	return differences
+}
+
+func decodeMediaModels(value any) map[string]media_billing_setting.MediaModelSpec {
+	raw, exists := value.(map[string]any)
+	if !exists || len(raw) == 0 {
+		return nil
+	}
+	encoded, err := common.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var models map[string]media_billing_setting.MediaModelSpec
+	if err := common.Unmarshal(encoded, &models); err != nil {
+		return nil
+	}
+	return models
+}
+
+func mediaSpecEqual(left, right media_billing_setting.MediaModelSpec) bool {
+	leftJSON, leftErr := common.Marshal(left)
+	rightJSON, rightErr := common.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return string(leftJSON) == string(rightJSON)
+}
+
 func roundRatioValue(value float64) float64 {
 	return math.Round(value*1e6) / 1e6
 }
@@ -715,10 +807,11 @@ func isModelsDevAPIEndpoint(rawURL string) bool {
 }
 
 // convertOpenRouterToRatioData parses OpenRouter's /v1/models response and converts
-// per-token USD pricing into the local ratio format.
-// model_ratio = prompt_price_per_token * 1_000_000 * (USD / 1000)
+// per-token pricing into the local ratio format.
+// model_ratio = prompt_price_per_token * 1_000 * RatioUnitPerYuanPer1K
 //
-//	since 1 ratio unit = $0.002/1K tokens and USD=500, the factor is 500_000
+//	1 ratio unit = ¥0.002/1K tokens，RatioUnitPerYuanPer1K = 500，因此系数为 500_000。
+//	站点以人民币单一计价，上游价格直接按 1:1 视为人民币单价，不做汇率换算。
 //
 // completion_ratio = completion_price / prompt_price (output/input multiplier)
 func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
@@ -774,7 +867,7 @@ func convertOpenRouterToRatioData(reader io.Reader) (map[string]any, error) {
 		}
 
 		// Normal case: promptPrice > 0
-		ratio := promptPrice * 1000 * ratio_setting.USD
+		ratio := promptPrice * 1000 * ratio_setting.RatioUnitPerYuanPer1K
 		ratio = roundRatioValue(ratio)
 		modelRatioMap[m.ID] = ratio
 
@@ -894,7 +987,7 @@ func shouldReplaceModelsDevCandidate(current, next modelsDevCandidate) bool {
 
 // convertModelsDevToRatioData parses models.dev /api.json and converts
 // provider pricing metadata into local ratio format.
-// models.dev costs are USD per 1M tokens:
+// models.dev costs are per 1M tokens（站点按 1:1 视为人民币单价）:
 //
 //	model_ratio = input_cost_per_1M / 2
 //	completion_ratio = output_cost / input_cost
@@ -957,7 +1050,7 @@ func convertModelsDevToRatioData(reader io.Reader) (map[string]any, error) {
 			continue
 		}
 
-		modelRatio := candidate.Input * float64(ratio_setting.USD) / modelsDevInputCostRatioBase
+		modelRatio := candidate.Input * float64(ratio_setting.RatioUnitPerYuanPer1K) / modelsDevInputCostRatioBase
 		modelRatioMap[modelName] = roundRatioValue(modelRatio)
 
 		if candidate.Output != nil {

@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import {
   applyAuthRotation,
   clearAuthentication,
+  isAuthFailureStale,
   refreshAuthentication,
 } from '@/lib/auth-session'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
@@ -36,6 +37,7 @@ declare module 'axios' {
     skipAuthRefresh?: boolean
     authRetry?: boolean
     acceptAuthRotation?: boolean
+    authSessionSID?: string
   }
 }
 
@@ -77,6 +79,22 @@ function redirectToSignIn(): void {
   }
 }
 
+// Concurrent requests that fail together report the same expiry event; a
+// shared toast id keeps sonner from stacking duplicates.
+const SESSION_EXPIRED_TOAST_ID = 'auth-session-expired'
+
+function notifySessionExpired(): void {
+  toast.error(t('Session expired!'), { id: SESSION_EXPIRED_TOAST_ID })
+}
+
+// Rate limited responses carry no body, so the generic handler would surface
+// axios' "Request failed with status code 429" instead of a readable message.
+const RATE_LIMITED_TOAST_ID = 'api-rate-limited'
+
+function notifyRateLimited(): void {
+  toast.error(t('Too many requests'), { id: RATE_LIMITED_TOAST_ID })
+}
+
 api.interceptors.response.use(
   (response) => {
     if (response.config.acceptAuthRotation && response.data?.success === true) {
@@ -103,6 +121,10 @@ api.interceptors.response.use(
     const status = error?.response?.status
 
     if (status === 401) {
+      if (isAuthFailureStale(config?.authSessionSID)) {
+        throw error
+      }
+
       if (config && !config.skipAuthRefresh && !config.authRetry) {
         config.authRetry = true
         const outcome = await refreshAuthentication()
@@ -118,16 +140,18 @@ api.interceptors.response.use(
         }
 
         if (outcome.kind === 'anonymous' || outcome.kind === 'out_of_sync') {
-          if (!skipErrorHandler) toast.error(t('Session expired!'))
+          if (!skipErrorHandler) notifySessionExpired()
           redirectToSignIn()
         }
       } else if (config?.authRetry) {
         clearAuthentication(false)
-        if (!skipErrorHandler) toast.error(t('Session expired!'))
+        if (!skipErrorHandler) notifySessionExpired()
         redirectToSignIn()
       } else if (!skipErrorHandler) {
-        toast.error(t('Session expired!'))
+        notifySessionExpired()
       }
+    } else if (status === 429) {
+      if (!skipErrorHandler) notifyRateLimited()
     } else if (!skipErrorHandler) {
       const messageKey = getServerErrorMessageKey(error)
       const message = messageKey
@@ -142,7 +166,10 @@ api.interceptors.response.use(
 )
 
 api.interceptors.request.use((config) => {
-  const accessToken = useAuthStore.getState().auth.accessToken
+  const { accessToken, session } = useAuthStore.getState().auth
+  // Remember which session this request belongs to so a 401 can tell an
+  // expired session apart from one that was already signed out meanwhile.
+  config.authSessionSID = session?.sid
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`
   }

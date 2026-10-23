@@ -33,11 +33,13 @@ import { cn } from '@/lib/utils'
 import {
   ENDPOINT_TYPES,
   FILTER_ALL,
+  MEDIA_KINDS,
   QUOTA_TYPES,
   getEndpointTypeLabels,
+  getMediaKindLabels,
   getQuotaTypeLabels,
 } from '../constants'
-import { parseTags } from '../lib/filters'
+import { matchesPricingType, parseTags } from '../lib/filters'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -57,11 +59,13 @@ type FilterSectionProps = {
 
 export interface PricingSidebarProps {
   quotaTypeFilter: string
+  mediaKindFilter: string
   endpointTypeFilter: string
   vendorFilter: string
   groupFilter: string
   tagFilter: string
   onQuotaTypeChange: (value: string) => void
+  onMediaKindChange: (value: string) => void
   onEndpointTypeChange: (value: string) => void
   onVendorChange: (value: string) => void
   onGroupChange: (value: string) => void
@@ -160,6 +164,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
   const quotaTypeLabels = getQuotaTypeLabels(t)
   const endpointTypeLabels = getEndpointTypeLabels(t)
+  const mediaKindLabels = getMediaKindLabels(t)
 
   const vendorOptions: FilterOption[] = [
     {
@@ -201,14 +206,43 @@ export function PricingSidebar(props: PricingSidebarProps) {
     {
       value: QUOTA_TYPES.TOKEN,
       label: quotaTypeLabels[QUOTA_TYPES.TOKEN],
-      count: countBy(props.models, (model) => model.quota_type === 0),
+      count: countBy(props.models, (model) =>
+        matchesPricingType(model, QUOTA_TYPES.TOKEN)
+      ),
+    },
+    {
+      value: QUOTA_TYPES.DYNAMIC,
+      label: quotaTypeLabels[QUOTA_TYPES.DYNAMIC],
+      count: countBy(props.models, (model) =>
+        matchesPricingType(model, QUOTA_TYPES.DYNAMIC)
+      ),
     },
     {
       value: QUOTA_TYPES.REQUEST,
       label: quotaTypeLabels[QUOTA_TYPES.REQUEST],
-      count: countBy(props.models, (model) => model.quota_type === 1),
+      count: countBy(props.models, (model) =>
+        matchesPricingType(model, QUOTA_TYPES.REQUEST)
+      ),
     },
   ]
+
+  const mediaKindOptions: FilterOption[] = [
+    {
+      value: MEDIA_KINDS.ALL,
+      label: mediaKindLabels[MEDIA_KINDS.ALL],
+      count: countBy(props.models, (model) => Boolean(model.media_kind)),
+    },
+    ...(
+      [MEDIA_KINDS.IMAGE, MEDIA_KINDS.VIDEO, MEDIA_KINDS.AUDIO, MEDIA_KINDS.MUSIC] as const
+    ).map((kind) => ({
+      value: kind,
+      label: mediaKindLabels[kind],
+      count: countBy(props.models, (model) => model.media_kind === kind),
+    })),
+  ]
+  const hasMediaModels = countBy(props.models, (model) =>
+    Boolean(model.media_kind)
+  ) > 0
 
   const tagOptions: FilterOption[] = [
     {
@@ -298,6 +332,14 @@ export function PricingSidebar(props: PricingSidebarProps) {
           options={quotaOptions}
           onChange={props.onQuotaTypeChange}
         />
+        {hasMediaModels && (
+          <FilterSection
+            title={t('Media Type')}
+            value={props.mediaKindFilter}
+            options={mediaKindOptions}
+            onChange={props.onMediaKindChange}
+          />
+        )}
         <FilterSection
           title={t('Endpoint Type')}
           value={props.endpointTypeFilter}

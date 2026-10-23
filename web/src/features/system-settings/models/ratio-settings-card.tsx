@@ -117,12 +117,14 @@ const createModelSchema = (t: Translate) =>
     ExposeRatioEnabled: z.boolean(),
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
+    MediaModels: createJsonStringField(t),
+    MediaEnabled: z.boolean(),
+    MediaPolicy: z.string(),
   })
 
 const createGroupSchema = (t: Translate) =>
   z.object({
     GroupRatio: createJsonStringField(t),
-    TopupGroupRatio: createJsonStringField(t),
     UserUsableGroups: createJsonStringField(t),
     GroupGroupRatio: createJsonStringField(t),
     AutoGroups: createJsonStringField(t, {
@@ -195,6 +197,9 @@ export function RatioSettingsCard({
     ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+    MediaModels: normalizeJsonString(modelDefaults.MediaModels),
+    MediaEnabled: modelDefaults.MediaEnabled,
+    MediaPolicy: modelDefaults.MediaPolicy,
   })
   const [savedModelValues, setSavedModelValues] = useState(
     modelNormalizedDefaults.current
@@ -202,7 +207,6 @@ export function RatioSettingsCard({
 
   const groupNormalizedDefaults = useRef({
     GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
-    TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
     UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
     GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
     AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
@@ -232,6 +236,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      MediaModels: formatJsonForTextarea(modelDefaults.MediaModels),
     },
   })
 
@@ -241,7 +246,6 @@ export function RatioSettingsCard({
     defaultValues: {
       ...groupDefaults,
       GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
-      TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
@@ -266,6 +270,9 @@ export function RatioSettingsCard({
       ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+      MediaModels: normalizeJsonString(modelDefaults.MediaModels),
+      MediaEnabled: modelDefaults.MediaEnabled,
+      MediaPolicy: modelDefaults.MediaPolicy,
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
@@ -283,13 +290,13 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      MediaModels: formatJsonForTextarea(modelDefaults.MediaModels),
     })
   }, [modelDefaults, modelForm])
 
   useEffect(() => {
     groupNormalizedDefaults.current = {
       GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
-      TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
       UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
       GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
       AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
@@ -303,7 +310,6 @@ export function RatioSettingsCard({
     groupForm.reset({
       ...groupDefaults,
       GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
-      TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
       UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
       GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
       AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
@@ -327,11 +333,17 @@ export function RatioSettingsCard({
         ExposeRatioEnabled: values.ExposeRatioEnabled,
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
+        MediaModels: normalizeJsonString(values.MediaModels),
+        MediaEnabled: values.MediaEnabled,
+        MediaPolicy: values.MediaPolicy,
       }
 
       const apiKeyMap: Record<string, string> = {
         BillingMode: 'billing_setting.billing_mode',
         BillingExpr: 'billing_setting.billing_expr',
+        MediaModels: 'media_billing_setting.models',
+        MediaEnabled: 'media_billing_setting.enabled',
+        MediaPolicy: 'media_billing_setting.unknown_tier_policy',
       }
 
       const updates = (
@@ -347,7 +359,23 @@ export function RatioSettingsCard({
 
       for (const key of updates) {
         const apiKey = apiKeyMap[key as string] || (key as string)
-        await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
+        try {
+          const response = await updateOption.mutateAsync({
+            key: apiKey,
+            value: normalized[key],
+          })
+          if (!response.success) {
+            toast.error(response.message || t('Failed to update setting'))
+            return
+          }
+        } catch (error) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : t('Failed to update setting')
+          )
+          return
+        }
       }
 
       modelNormalizedDefaults.current = normalized
@@ -360,7 +388,6 @@ export function RatioSettingsCard({
     async (values: GroupFormValues) => {
       const normalized = {
         GroupRatio: normalizeJsonString(values.GroupRatio),
-        TopupGroupRatio: normalizeJsonString(values.TopupGroupRatio),
         UserUsableGroups: normalizeJsonString(values.UserUsableGroups),
         GroupGroupRatio: normalizeJsonString(values.GroupGroupRatio),
         AutoGroups: normalizeJsonString(values.AutoGroups),
@@ -447,6 +474,7 @@ export function RatioSettingsCard({
     }
     return (
       <UpstreamRatioSync
+        mediaModelsJson={normalizeJsonString(modelDefaults.MediaModels)}
         modelRatios={{
           ModelPrice: modelDefaults.ModelPrice,
           ModelRatio: modelDefaults.ModelRatio,

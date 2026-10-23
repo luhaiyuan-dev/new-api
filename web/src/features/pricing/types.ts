@@ -27,6 +27,18 @@ export type PricingVendor = {
   description?: string
 }
 
+/** Structured media price returned by the pricing API (CNY per unit). */
+export type MediaPriceInfo = {
+  kind: string
+  unit: string
+  min_price: number
+  max_price: number
+  resolution_tiers?: string[]
+  quality_tiers?: string[]
+  /** Billed duration assumed for per-second media when the spec declares one */
+  default_duration?: number
+}
+
 export type PricingModel = {
   id: number
   model_name: string
@@ -54,6 +66,14 @@ export type PricingModel = {
   billing_mode?: string
   /** Raw expression describing dynamic / tiered billing */
   billing_expr?: string
+  /** Billing unit declared for a tiered expression (per_1m_tokens/per_image/...) */
+  billing_unit?: string
+  /** Media kind from the media price table (image/video/audio/music/...) */
+  media_kind?: string
+  /** Human-readable media price summary, e.g. "1k/2k × low/medium/high" */
+  media_summary?: string
+  /** Structured per-unit media price used for the pricing page preview */
+  media_price?: MediaPriceInfo
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
   /**

@@ -17,131 +17,54 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /**
- * Home page constants
- * All hardcoded data for home page sections
+ * Home page layout tokens.
+ *
+ * Every landing section composes these classes instead of re-declaring the
+ * same paddings, typography and surfaces, so the page keeps one visual rhythm.
  */
-import { type TFunction } from 'i18next'
 
-// Layout - Main base classes
 export const MAIN_BASE_CLASSES = 'bg-background text-foreground w-full'
 
-// Hero section - AI Applications (Left side)
-export const AI_APPLICATIONS = [
-  'LobeHub.Color',
-  'Dify.Color',
-  'OpenWebUI',
-  'Cline',
-] as const
+export const HOME_CONTAINER = 'mx-auto w-full max-w-6xl px-6'
 
-// Hero section - AI Models (Right side)
-export const AI_MODELS = [
-  'Qwen.Color',
-  'DeepSeek.Color',
-  'Doubao.Color',
-  'OpenAI',
-  'Claude.Color',
-  'Gemini.Color',
-] as const
+/** Vertical rhythm for full-width landing sections. */
+export const HOME_SECTION_Y = 'py-20 md:py-24'
 
-// Hero section - Gateway Features
-export const GATEWAY_FEATURES = [
-  'Cost Tracking',
-  'Model Access',
-  'Guardrails',
-  'Observability',
-  'Budgets',
-  'Load Balancing',
-  'Rate Limiting',
-  'Token Mgmt',
-  'Prompt Caching',
-  'Pass-Through',
-] as const
+/** Section header — leading index number. */
+export const HOME_SECTION_INDEX =
+  'font-mono text-4xl leading-none font-bold text-blue-500/25 select-none md:text-5xl dark:text-blue-400/30'
 
-// Stats section - Default statistics
-export const DEFAULT_STATS = [
-  {
-    value: '50',
-    suffix: '+',
-    description: 'upstream services integrated',
-  },
-  {
-    value: '100',
-    suffix: '+',
-    description: 'model billing support',
-  },
-  {
-    value: '50',
-    suffix: '+',
-    description: 'compatible API routes',
-  },
-  {
-    value: '10',
-    suffix: '+',
-    description: 'scheduling controls',
-  },
-] as const
+export const HOME_EYEBROW =
+  'text-[11px] font-semibold tracking-[0.2em] text-blue-600 uppercase dark:text-blue-400'
 
-// Features section - Default features
-export const DEFAULT_FEATURES = [
-  {
-    title: 'Lightning Fast',
-    description:
-      'Optimized network architecture ensures millisecond response times',
-    iconName: 'Zap',
-  },
-  {
-    title: 'Secure & Reliable',
-    description:
-      'Enterprise-grade security with comprehensive permission management',
-    iconName: 'Shield',
-  },
-  {
-    title: 'Global Coverage',
-    description: 'Multi-region deployment for stable global access',
-    iconName: 'Globe',
-  },
-  {
-    title: 'Developer Friendly',
-    description: 'Compatible API routes for common AI application workflows',
-    iconName: 'Code',
-  },
-  {
-    title: 'High Performance',
-    description: 'Support for high concurrency with automatic load balancing',
-    iconName: 'Gauge',
-  },
-  {
-    title: 'Transparent Billing',
-    description: 'Pay-as-you-go with real-time usage monitoring',
-    iconName: 'DollarSign',
-  },
-  {
-    title: 'Team Collaboration',
-    description: 'Multi-user management with flexible permission allocation',
-    iconName: 'Users',
-  },
-  {
-    title: 'Open Source',
-    description: 'Community driven, self-hosted, and extensible',
-    iconName: 'HeartHandshake',
-  },
-] as const
+export const HOME_TITLE =
+  'text-2xl leading-tight font-bold tracking-tight md:text-[32px]'
 
-export function getGatewayFeatures(t: TFunction) {
-  return GATEWAY_FEATURES.map((feature) => t(feature))
-}
+export const HOME_DESC =
+  'text-muted-foreground/75 text-sm leading-relaxed md:text-[15px]'
 
-export function getDefaultStats(t: TFunction) {
-  return DEFAULT_STATS.map((stat) => ({
-    ...stat,
-    description: stat.description ? t(stat.description) : undefined,
-  }))
-}
+/** Surface shared by panels and cards — cool-tinted so cards lift off the page wash. */
+export const HOME_PANEL =
+  'border-blue-500/[0.14] bg-card relative overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_40px_-24px_rgba(37,99,235,0.35)] [background-image:linear-gradient(165deg,rgba(37,99,235,0.08),transparent_48%)] dark:border-blue-400/[0.16] dark:shadow-[0_1px_2px_rgba(0,0,0,0.45),0_18px_40px_-24px_rgba(59,130,246,0.4)] dark:[background-image:linear-gradient(165deg,rgba(59,130,246,0.12),transparent_48%)]'
 
-export function getDefaultFeatures(t: TFunction) {
-  return DEFAULT_FEATURES.map((feature) => ({
-    ...feature,
-    title: t(feature.title),
-    description: t(feature.description),
-  }))
-}
+export const HOME_TAG =
+  'inline-flex items-center rounded-full border border-blue-500/15 bg-blue-500/[0.06] px-2.5 py-1 text-[11px] font-medium text-blue-700 dark:border-blue-400/20 dark:bg-blue-400/[0.08] dark:text-blue-300'
+
+/** Hairline gradient revealed on card hover. */
+export const HOME_CARD_HAIRLINE =
+  'pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:via-blue-400/50'
+
+/** Stagger step for grid entrances. */
+export const HOME_STAGGER = 80
+
+/** Product surface a CTA should lead to, depending on auth state. */
+export const AUTHED_ENTRY_ROUTE = '/dashboard'
+export const GUEST_ENTRY_ROUTE = '/sign-up'
+
+/** External support entry that exists regardless of backend configuration. */
+export const COMMUNITY_URL =
+  'https://docs.newapi.pro/support/community-interaction/'
+
+export const REPOSITORY_URL = 'https://github.com/QuantumNous/new-api'
+
+export const FALLBACK_DOCS_URL = 'https://docs.newapi.pro'

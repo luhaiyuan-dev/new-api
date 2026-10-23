@@ -26,6 +26,81 @@ type TokenParams struct {
 	ImgO float64 // image output tokens
 	AI   float64 // audio input tokens
 	AO   float64 // audio output tokens
+
+	// Media dimensions. All optional: token-only expressions ignore them.
+	N     float64 // generated item count (image count, video count)
+	Dur   float64 // media duration in seconds
+	W     float64 // pixel width
+	H     float64 // pixel height
+	FPS   float64 // frame rate
+	Audio float64 // 1 when the request includes audio, otherwise 0
+	Vin   float64 // 1 when the request includes video input, otherwise 0
+	Res   string  // normalized resolution tier, e.g. 1k / 1080p / 4k
+	Q     string  // normalized quality tier, e.g. low / medium / high
+}
+
+// MediaSnapshot freezes media dimensions at pre-consume time so asynchronous
+// settlement can reproduce the charge without the original request body.
+type MediaSnapshot struct {
+	N     float64 `json:"n,omitempty"`
+	Dur   float64 `json:"dur,omitempty"`
+	W     float64 `json:"w,omitempty"`
+	H     float64 `json:"h,omitempty"`
+	FPS   float64 `json:"fps,omitempty"`
+	Audio float64 `json:"audio,omitempty"`
+	Vin   float64 `json:"vin,omitempty"`
+	Res   string  `json:"res,omitempty"`
+	Q     string  `json:"q,omitempty"`
+}
+
+func SnapshotMedia(params TokenParams) *MediaSnapshot {
+	return &MediaSnapshot{
+		N:     params.N,
+		Dur:   params.Dur,
+		W:     params.W,
+		H:     params.H,
+		FPS:   params.FPS,
+		Audio: params.Audio,
+		Vin:   params.Vin,
+		Res:   params.Res,
+		Q:     params.Q,
+	}
+}
+
+// Apply fills media dimensions that the settlement params do not carry.
+// Actual usage (when known) wins over the frozen snapshot.
+func (s *MediaSnapshot) Apply(params TokenParams) TokenParams {
+	if s == nil {
+		return params
+	}
+	if params.N <= 0 {
+		params.N = s.N
+	}
+	if params.Dur <= 0 {
+		params.Dur = s.Dur
+	}
+	if params.W <= 0 {
+		params.W = s.W
+	}
+	if params.H <= 0 {
+		params.H = s.H
+	}
+	if params.FPS <= 0 {
+		params.FPS = s.FPS
+	}
+	if params.Audio == 0 {
+		params.Audio = s.Audio
+	}
+	if params.Vin == 0 {
+		params.Vin = s.Vin
+	}
+	if params.Res == "" {
+		params.Res = s.Res
+	}
+	if params.Q == "" {
+		params.Q = s.Q
+	}
+	return params
 }
 
 // RequestRuleTrace describes one request-dependent multiplier detected at compile time.
@@ -47,18 +122,20 @@ type TraceResult struct {
 // auto-group retry and settlement. It is fully serializable and contains no
 // compiled program pointers.
 type BillingSnapshot struct {
-	BillingMode               string  `json:"billing_mode"`
-	ModelName                 string  `json:"model_name"`
-	ExprString                string  `json:"expr_string"`
-	ExprHash                  string  `json:"expr_hash"`
-	GroupRatio                float64 `json:"group_ratio"`
-	EstimatedPromptTokens     int     `json:"estimated_prompt_tokens"`
-	EstimatedCompletionTokens int     `json:"estimated_completion_tokens"`
-	EstimatedQuotaBeforeGroup float64 `json:"estimated_quota_before_group"`
-	EstimatedQuotaAfterGroup  int     `json:"estimated_quota_after_group"`
-	EstimatedTier             string  `json:"estimated_tier"`
-	QuotaPerUnit              float64 `json:"quota_per_unit"`
-	ExprVersion               int     `json:"expr_version"`
+	BillingMode               string         `json:"billing_mode"`
+	ModelName                 string         `json:"model_name"`
+	ExprString                string         `json:"expr_string"`
+	ExprHash                  string         `json:"expr_hash"`
+	GroupRatio                float64        `json:"group_ratio"`
+	EstimatedPromptTokens     int            `json:"estimated_prompt_tokens"`
+	EstimatedCompletionTokens int            `json:"estimated_completion_tokens"`
+	EstimatedQuotaBeforeGroup float64        `json:"estimated_quota_before_group"`
+	EstimatedQuotaAfterGroup  int            `json:"estimated_quota_after_group"`
+	EstimatedTier             string         `json:"estimated_tier"`
+	QuotaPerUnit              float64        `json:"quota_per_unit"`
+	ExprVersion               int            `json:"expr_version"`
+	BillingUnit               string         `json:"billing_unit,omitempty"`
+	Media                     *MediaSnapshot `json:"media,omitempty"`
 }
 
 // TieredResult holds everything needed after running tiered settlement.

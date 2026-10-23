@@ -64,7 +64,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useStatus } from '@/hooks/use-status'
 import { getUserModels, getUserGroups } from '@/lib/api'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 import {
@@ -350,13 +350,11 @@ export function ApiKeysMutateDrawer({
     form.setValue('expired_time', now)
   }
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
   const quotaLabel = t('Quota ({{currency}})', { currency: currencyLabel })
-  const quotaPlaceholder = tokensOnly
-    ? t('Enter quota in tokens')
-    : t('Enter quota in {{currency}}', { currency: currencyLabel })
+  const quotaPlaceholder = t('Enter quota in {{currency}}', {
+    currency: currencyLabel,
+  })
   const autoGroupsMode = form.watch('auto_groups_mode')
   const unlimitedQuota = form.watch('unlimited_quota')
 
@@ -619,7 +617,7 @@ export function ApiKeysMutateDrawer({
                         <Input
                           {...field}
                           type='number'
-                          step={tokensOnly ? 1 : 0.01}
+                          step={0.01}
                           placeholder={quotaPlaceholder}
                           onChange={(e) =>
                             field.onChange(
@@ -629,9 +627,7 @@ export function ApiKeysMutateDrawer({
                         />
                       </FormControl>
                       <FormDescription>
-                        {tokensOnly
-                          ? t('Enter the quota amount in tokens')
-                          : t('Enter the quota amount in {{currency}}', {
+                        {t('Enter the quota amount in {{currency}}', {
                               currency: currencyLabel,
                             })}
                       </FormDescription>

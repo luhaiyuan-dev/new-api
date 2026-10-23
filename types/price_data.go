@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	relaykitttypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -30,6 +31,11 @@ type PriceData struct {
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
 	GroupRatioInfo       GroupRatioInfo
+	// MediaBilling is set when the request price came from the media price
+	// table. ModelPrice then holds the per-unit price (元/张、元/秒) and the
+	// quantity is carried by OtherRatios so pre-consume and settlement share
+	// one formula.
+	MediaBilling *relaykitttypes.ResolvedMediaPrice
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

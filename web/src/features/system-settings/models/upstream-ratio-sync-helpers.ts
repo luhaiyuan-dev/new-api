@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { RatioType } from '../types'
+import type {
+  MediaDifferences,
+  MediaPriceSpec,
+  RatioType,
+} from '../types'
 import {
   MODELS_DEV_PRESET_ID,
   MODELS_DEV_PRESET_NAME,
@@ -58,6 +62,41 @@ export type ResolutionRemoval = {
 
 export type ResolutionRemovalPlan = Map<string, Set<RatioType>>
 
+/**
+ * Merge the selected upstream media specs into the local media price table.
+ * Returns null when nothing was selected, so callers can skip the option write.
+ */
+export function mergeMediaSpecs(
+  localJson: string | undefined,
+  differences: MediaDifferences,
+  selections: Record<string, string>
+): string | null {
+  const chosen = Object.entries(selections)
+  if (chosen.length === 0) return null
+
+  let models: Record<string, MediaPriceSpec> = {}
+  if (localJson && localJson.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(localJson)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        models = parsed as Record<string, MediaPriceSpec>
+      }
+    } catch {
+      throw new Error('invalid_media_price_table')
+    }
+  }
+
+  let changed = false
+  for (const [model, channel] of chosen) {
+    const spec = differences[model]?.upstreams?.[channel]
+    if (!spec) continue
+    models[model] = spec
+    changed = true
+  }
+  if (!changed) return null
+  return JSON.stringify(models, null, 2)
+}
+
 export const RATIO_SYNC_FIELDS: RatioType[] = [
   'model_ratio',
   'completion_ratio',
@@ -73,6 +112,7 @@ export const SYNC_FIELD_ORDER: RatioType[] = [
   'model_price',
   'billing_mode',
   'billing_expr',
+  'billing_unit',
 ]
 
 export const NUMERIC_SYNC_FIELDS = new Set<string>([
@@ -152,7 +192,11 @@ export function getBillingCategory(
   ratioType: string
 ): 'price' | 'ratio' | 'tiered' {
   if (ratioType === 'model_price') return 'price'
-  if (ratioType === 'billing_mode' || ratioType === 'billing_expr') {
+  if (
+    ratioType === 'billing_mode' ||
+    ratioType === 'billing_expr' ||
+    ratioType === 'billing_unit'
+  ) {
     return 'tiered'
   }
   return 'ratio'

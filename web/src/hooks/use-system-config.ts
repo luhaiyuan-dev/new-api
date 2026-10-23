@@ -23,7 +23,6 @@ import { applyFaviconToDom } from '@/lib/dom-utils'
 import {
   useSystemConfigStore,
   type CurrencyConfig,
-  type CurrencyDisplayType,
   type SystemConfig,
   DEFAULT_CURRENCY_CONFIG,
 } from '@/stores/system-config-store'
@@ -41,12 +40,7 @@ interface StatusApiResponse {
     footer_html?: string
     demo_site_enabled?: boolean
     display_token_stat_enabled?: boolean
-    display_in_currency?: boolean
-    quota_display_type?: CurrencyDisplayType
     quota_per_unit?: number
-    usd_exchange_rate?: number
-    custom_currency_symbol?: string
-    custom_currency_exchange_rate?: number
   }
 }
 
@@ -67,28 +61,10 @@ export function mapStatusDataToConfig(
 ): Partial<SystemConfig> {
   if (!data) return {}
 
-  const quotaDisplayType =
-    (data.quota_display_type as CurrencyDisplayType | undefined) ??
-    DEFAULT_CURRENCY_CONFIG.quotaDisplayType
-
   const currency: CurrencyConfig = {
-    displayInCurrency:
-      data.display_in_currency ?? DEFAULT_CURRENCY_CONFIG.displayInCurrency,
-    quotaDisplayType,
     quotaPerUnit: toNumber(
       data.quota_per_unit,
       DEFAULT_CURRENCY_CONFIG.quotaPerUnit
-    ),
-    usdExchangeRate: toNumber(
-      data.usd_exchange_rate,
-      DEFAULT_CURRENCY_CONFIG.usdExchangeRate
-    ),
-    customCurrencySymbol:
-      data.custom_currency_symbol?.trim() ||
-      DEFAULT_CURRENCY_CONFIG.customCurrencySymbol,
-    customCurrencyExchangeRate: toNumber(
-      data.custom_currency_exchange_rate,
-      DEFAULT_CURRENCY_CONFIG.customCurrencyExchangeRate
     ),
   }
 

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { formatCurrencyFromUSD, formatQuotaWithCurrency } from '@/lib/currency'
+import { formatCNY, formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
@@ -330,7 +330,7 @@ export function formatBalance(balance: number | null | undefined): string {
   if (balance == null || Number.isNaN(balance)) {
     return '-'
   }
-  return formatCurrencyFromUSD(balance, {
+  return formatCNY(balance, {
     digitsLarge: 2,
     digitsSmall: 4,
     abbreviate: false,
@@ -561,7 +561,7 @@ export function channelNeedsAttention(channel: Channel): boolean {
     return true
   }
 
-  // Low balance (less than $1)
+  // Low balance (less than ¥1)
   if (channel.balance > 0 && channel.balance < 1) {
     return true
   }

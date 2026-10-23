@@ -24,8 +24,8 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
-import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
+import { getCurrencyLabel } from '@/lib/currency'
+import { formatQuota, parseQuotaFromYuan } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { adjustUserQuota } from '../api'
@@ -45,12 +45,10 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
 
   const amountValue = parseFloat(amount) || 0
-  const quotaValue = parseQuotaFromDollars(Math.abs(amountValue))
+  const quotaValue = parseQuotaFromYuan(Math.abs(amountValue))
 
   const getPreviewText = () => {
     const current = props.currentQuota
@@ -61,7 +59,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
       case 'subtract':
         return `${t('Current quota')}: ${formatQuota(current)}  -${formatQuota(val)} = ${formatQuota(current - val)}`
       case 'override': {
-        const overrideQuota = parseQuotaFromDollars(amountValue)
+        const overrideQuota = parseQuotaFromYuan(amountValue)
         return `${t('Current quota')}: ${formatQuota(current)} → ${formatQuota(overrideQuota)}`
       }
       default:
@@ -76,7 +74,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
     setLoading(true)
     try {
       const value =
-        mode === 'override' ? parseQuotaFromDollars(amountValue) : quotaValue
+        mode === 'override' ? parseQuotaFromYuan(amountValue) : quotaValue
       const result = await adjustUserQuota({
         id: props.userId,
         action: 'add_quota',
@@ -105,9 +103,9 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
     props.onOpenChange(false)
   }
 
-  const placeholder = tokensOnly
-    ? t('Enter amount in tokens')
-    : t('Enter amount in {{currency}}', { currency: currencyLabel })
+  const placeholder = t('Enter amount in {{currency}}', {
+    currency: currencyLabel,
+  })
 
   return (
     <Dialog
@@ -165,7 +163,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
           </Label>
           <Input
             type='number'
-            step={tokensOnly ? 1 : 0.000001}
+            step={0.000001}
             min={mode === 'override' ? undefined : 0}
             placeholder={placeholder}
             value={amount}

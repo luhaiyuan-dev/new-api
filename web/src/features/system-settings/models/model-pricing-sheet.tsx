@@ -24,6 +24,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useForm } from 'react-hook-form'
@@ -60,12 +61,19 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
 import {
+  MediaPricingFields,
+  type MediaPricingFieldsHandle,
+} from './media-pricing/media-pricing-fields'
+import type { MediaModelSpec } from './media-pricing/media-pricing-types'
+import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
+  buildMediaPreviewRows,
   buildPreviewRows,
   createInitialLaneState,
   createModelPricingSchema,
@@ -155,7 +163,10 @@ export const ModelPricingEditorPanel = forwardRef<
   })
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
+  const [mediaEnabled, setMediaEnabled] = useState(false)
+  const [mediaSpec, setMediaSpec] = useState<MediaModelSpec | null>(null)
   const [editorReloadToken, setEditorReloadToken] = useState(0)
+  const mediaFieldsRef = useRef<MediaPricingFieldsHandle>(null)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -197,6 +208,8 @@ export const ModelPricingEditorPanel = forwardRef<
       )
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
+      setMediaEnabled(Boolean(editData.media))
+      setMediaSpec(editData.media ?? null)
     } else {
       form.reset({
         name: '',
@@ -212,6 +225,8 @@ export const ModelPricingEditorPanel = forwardRef<
       setPricingMode('per-token')
       setBillingExpr('')
       setRequestRuleExpr('')
+      setMediaEnabled(false)
+      setMediaSpec(null)
     }
 
     setPromptPrice(nextLaneState.promptPrice)
@@ -341,29 +356,31 @@ export const ModelPricingEditorPanel = forwardRef<
   }
 
   const watchedValues = form.watch()
-  const previewRows = useMemo(
-    () =>
-      buildPreviewRows(
-        watchedValues,
-        pricingMode,
-        billingExpr,
-        requestRuleExpr,
-        promptPrice,
-        lanePrices,
-        laneEnabled,
-        t
-      ),
-    [
-      billingExpr,
-      laneEnabled,
-      lanePrices,
-      pricingMode,
-      promptPrice,
-      requestRuleExpr,
-      t,
+  const previewRows = useMemo(() => {
+    const rows = buildPreviewRows(
       watchedValues,
-    ]
-  )
+      pricingMode,
+      billingExpr,
+      requestRuleExpr,
+      promptPrice,
+      lanePrices,
+      laneEnabled,
+      t
+    )
+    if (!mediaEnabled || !mediaSpec) return rows
+    return [...rows, ...buildMediaPreviewRows(mediaSpec, t)]
+  }, [
+    billingExpr,
+    laneEnabled,
+    lanePrices,
+    mediaEnabled,
+    mediaSpec,
+    pricingMode,
+    promptPrice,
+    requestRuleExpr,
+    t,
+    watchedValues,
+  ])
 
   const warnings = useMemo(() => {
     const nextWarnings: string[] = []
@@ -469,10 +486,18 @@ export const ModelPricingEditorPanel = forwardRef<
       commitDraft: async () => {
         const isValid = await form.trigger()
         if (!isValid || !validatePricingValues()) return null
-        return buildSubmitData(form.getValues())
+        const data = buildSubmitData(form.getValues())
+        if (mediaEnabled) {
+          const media = mediaFieldsRef.current?.commit()
+          if (!media) return null
+          data.media = media
+        } else {
+          data.media = null
+        }
+        return data
       },
     }),
-    [form, validatePricingValues, buildSubmitData]
+    [form, mediaEnabled, validatePricingValues, buildSubmitData]
   )
 
   const showActions = Boolean(onSave)
@@ -566,7 +591,7 @@ export const ModelPricingEditorPanel = forwardRef<
                           onChange={handlePromptPriceChange}
                         />
                         <FieldDescription>
-                          {t('USD price per 1M input tokens.')}
+                          {t('CNY price per 1M input tokens.')}
                         </FieldDescription>
                       </Field>
 
@@ -609,7 +634,7 @@ export const ModelPricingEditorPanel = forwardRef<
                               <FieldLabel>{t('Fixed price')}</FieldLabel>
                               <FormControl>
                                 <InputGroup>
-                                  <InputGroupAddon>$</InputGroupAddon>
+                                  <InputGroupAddon>¥</InputGroupAddon>
                                   <InputGroupInput
                                     inputMode='decimal'
                                     placeholder='0.01'
@@ -628,7 +653,7 @@ export const ModelPricingEditorPanel = forwardRef<
                               </FormControl>
                               <FieldDescription>
                                 {t(
-                                  'Cost in USD per request, regardless of tokens used.'
+                                  'Cost in CNY per request, regardless of tokens used.'
                                 )}
                               </FieldDescription>
                               <FormMessage />
@@ -652,6 +677,37 @@ export const ModelPricingEditorPanel = forwardRef<
                     </FieldGroup>
                   </TabsContent>
                 </Tabs>
+
+                <div className='rounded-lg border p-3'>
+                  <div className='flex items-start justify-between gap-3'>
+                    <div className='min-w-0 space-y-1'>
+                      <div className='text-sm font-medium'>
+                        {t('Media pricing')}
+                      </div>
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'Media prices override the fixed or token price for image and video requests.'
+                        )}
+                      </p>
+                    </div>
+                    <Switch
+                      id='model-media-pricing-enabled'
+                      aria-label={t('Enable media pricing')}
+                      checked={mediaEnabled}
+                      onCheckedChange={setMediaEnabled}
+                    />
+                  </div>
+                  {mediaEnabled && (
+                    <div className='mt-4 border-t pt-4'>
+                      <MediaPricingFields
+                        key={`${editorReloadToken}:media`}
+                        ref={mediaFieldsRef}
+                        spec={editData?.media ?? null}
+                        onSpecChange={setMediaSpec}
+                      />
+                    </div>
+                  )}
+                </div>
               </FieldGroup>
 
               <aside className='bg-muted/20 sticky top-0 rounded-lg border'>

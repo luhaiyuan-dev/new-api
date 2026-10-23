@@ -29,94 +29,56 @@ import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
 // ============================================================================
 
 /**
- * Check if browser is Safari
+ * Check if payment method is WeChat Pay (official direct integration)
  */
-function isSafariBrowser(): boolean {
-  return (
-    navigator.userAgent.includes('Safari') &&
-    !navigator.userAgent.includes('Chrome')
-  )
+export function isNativeWechatPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.WECHAT_PAY
 }
 
 /**
- * Submit payment form (for non-Stripe payments)
+ * Check if payment method is Alipay (official direct integration)
  */
-export function submitPaymentForm(
-  url: string,
-  params: Record<string, unknown>
-): void {
-  const form = document.createElement('form')
-  form.action = url
-  form.method = 'POST'
-
-  // Don't open in new tab for Safari
-  if (!isSafariBrowser()) {
-    form.target = '_blank'
-  }
-
-  // Add form parameters
-  Object.entries(params).forEach(([key, value]) => {
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.name = key
-    input.value = String(value)
-    form.appendChild(input)
-  })
-
-  document.body.appendChild(form)
-  form.submit()
-  document.body.removeChild(form)
-}
-
-/**
- * Check if payment method is Stripe
- */
-export function isStripePayment(paymentType: string): boolean {
-  return paymentType === PAYMENT_TYPES.STRIPE
-}
-
-/**
- * Check if payment method is Waffo
- */
-export function isWaffoPayment(paymentType: string): boolean {
-  return paymentType === PAYMENT_TYPES.WAFFO
-}
-
-/**
- * Check if payment method is Waffo Pancake
- *
- * Pancake is a metered-style payment that goes through a dedicated checkout
- * URL flow rather than the generic epay form submission, so it must be
- * special-cased in payment dispatch logic.
- */
-export function isWaffoPancakePayment(paymentType: string): boolean {
-  return paymentType === PAYMENT_TYPES.WAFFO_PANCAKE
+export function isNativeAlipayPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.ALIPAY_PAY
 }
 
 export interface PaymentProcessors {
-  regular: (topupAmount: number, paymentType: string) => Promise<boolean>
-  waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
-  waffoPancake: (topupAmount: number) => Promise<boolean>
+  native: (topupAmount: number, paymentType: string) => Promise<boolean>
+}
+
+/**
+ * 该支付方式是否在页面当前可选渠道内。
+ *
+ * `pay_methods` 是后端按渠道配置过滤后的结果，也正是充值卡片上渲染出来的按钮来源，
+ * 因此它是「渠道是否可用」的唯一依据。额外的 enable_*_topup 标记在渠道配置不完整或
+ * 前后端版本不一致时会与按钮列表自相矛盾：按钮能点，下单却必然被拦。
+ */
+export function isPaymentMethodAvailable(
+  paymentMethod: PaymentMethod,
+  topupInfo: TopupInfo | null
+): boolean {
+  const methods = topupInfo?.pay_methods
+  if (!methods || methods.length === 0) {
+    return false
+  }
+
+  return methods.some((method) => method.type === paymentMethod.type)
 }
 
 export async function dispatchSelectedPayment(
   paymentMethod: PaymentMethod,
   topupAmount: number,
-  waffoMethodIndex: number | null,
   processors: PaymentProcessors
 ): Promise<boolean> {
-  if (isWaffoPayment(paymentMethod.type)) {
-    if (waffoMethodIndex === null) {
-      return false
-    }
-    return processors.waffo(topupAmount, waffoMethodIndex)
+  // 只有微信支付与支付宝两个直连渠道，两者都走扫码支付流程。
+  if (
+    !isNativeWechatPayment(paymentMethod.type) &&
+    !isNativeAlipayPayment(paymentMethod.type)
+  ) {
+    return false
   }
 
-  if (isWaffoPancakePayment(paymentMethod.type)) {
-    return processors.waffoPancake(topupAmount)
-  }
-
-  return processors.regular(topupAmount, paymentMethod.type)
+  return processors.native(topupAmount, paymentMethod.type)
 }
 
 /**
@@ -132,19 +94,53 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
     return topupInfo.pay_methods[0].type
   }
 
-  if (topupInfo.enable_stripe_topup) {
-    return PAYMENT_TYPES.STRIPE
-  }
-
-  if (topupInfo.enable_waffo_topup) {
-    return PAYMENT_TYPES.WAFFO
-  }
-
-  if (topupInfo.enable_waffo_pancake_topup) {
-    return PAYMENT_TYPES.WAFFO_PANCAKE
-  }
-
   return DEFAULT_PAYMENT_TYPE
+}
+
+/**
+ * 计算某档充值金额的实付金额。
+ * 折扣只下调实付金额，到账额度仍按充值金额计算；未配置档位或比例非法时
+ * 返回原价，与后端 getPayMoney 的计价规则保持一致。
+ */
+export function getPayableAmount(
+  topupInfo: TopupInfo | null,
+  topupAmount: number
+): number {
+  const amount = Math.floor(topupAmount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return topupAmount
+  }
+
+  const rate = topupInfo?.discount?.[String(amount)]
+  if (typeof rate !== 'number' || !(rate > 0) || rate > 1) {
+    return amount
+  }
+
+  return Math.round(amount * rate * 100) / 100
+}
+
+export type DiscountLabels = {
+  /** 折扣百分比，用于「X% off」文案 */
+  percent: number
+  /** 折后成数（9.8 表示 9.8 折），用于中文「X 折」文案 */
+  rate: number
+}
+
+/**
+ * 计算折扣展示文案的参数。实付不低于面额（即无折扣）时返回 null。
+ */
+export function getDiscountLabels(
+  amount: number,
+  payable: number
+): DiscountLabels | null {
+  if (!(amount > 0) || !(payable > 0) || payable >= amount) {
+    return null
+  }
+
+  return {
+    percent: Math.round(((amount - payable) / amount) * 100),
+    rate: Number(((payable / amount) * 10).toFixed(1)),
+  }
 }
 
 /**
@@ -155,20 +151,8 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
     return DEFAULT_MIN_TOPUP
   }
 
-  if (topupInfo.enable_online_topup) {
+  if (topupInfo.min_topup > 0) {
     return topupInfo.min_topup
-  }
-
-  if (topupInfo.enable_stripe_topup) {
-    return topupInfo.stripe_min_topup
-  }
-
-  if (topupInfo.enable_waffo_topup) {
-    return topupInfo.waffo_min_topup || DEFAULT_MIN_TOPUP
-  }
-
-  if (topupInfo.enable_waffo_pancake_topup) {
-    return topupInfo.waffo_pancake_min_topup || DEFAULT_MIN_TOPUP
   }
 
   return DEFAULT_MIN_TOPUP
@@ -184,18 +168,12 @@ export function generatePresetAmounts(minAmount: number): PresetAmount[] {
 }
 
 /**
- * Merge custom preset amounts with discounts
+ * Build preset amounts from the configured amount options
  */
-export function mergePresetAmounts(
-  amountOptions: number[],
-  discounts: Record<number, number>
-): PresetAmount[] {
+export function mergePresetAmounts(amountOptions: number[]): PresetAmount[] {
   if (!amountOptions || amountOptions.length === 0) {
     return []
   }
 
-  return amountOptions.map((amount) => ({
-    value: amount,
-    discount: discounts[amount] || 1.0,
-  }))
+  return amountOptions.map((amount) => ({ value: amount }))
 }

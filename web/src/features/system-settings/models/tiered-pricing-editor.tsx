@@ -101,7 +101,7 @@ import {
 } from '@/features/pricing/lib/tier-expr'
 import { cn } from '@/lib/utils'
 
-const PRICE_SUFFIX = '$/1M tokens'
+const PRICE_SUFFIX = '¥/1M tokens'
 const CACHE_PRICE_VARS = BILLING_EXTRA_VARS.filter(
   (variable) => variable.group === 'cache'
 )
@@ -1513,7 +1513,7 @@ Important: len is NOT affected by auto-exclusion. Tier conditions should use len
 
 ### Price Coefficients
 
-Numbers in the expression are $/1M tokens prices. For example, p * 2.5 means input $2.50/1M tokens.
+Numbers in the expression are ¥/1M tokens prices. For example, p * 2.5 means input ¥2.50/1M tokens.
 
 ## Expression Examples
 
@@ -1547,7 +1547,7 @@ len <= 128000
 2. Use English tier names, e.g. "base", "standard", "long_context"
 3. Use len for tier conditions (not p), supports <, <=, >, >=
 4. Multi-tier uses nested ternary: cond1 ? tier(...) : (cond2 ? tier(...) : tier(...))
-5. Price coefficients are the provider's official $/1M tokens prices
+5. Price coefficients are the provider's official ¥/1M tokens prices
 6. If cache/image/audio don't need separate pricing, omit those variables; their tokens are included in p/c automatically
 
 Please generate a billing expression based on the model information and pricing requirements provided.`

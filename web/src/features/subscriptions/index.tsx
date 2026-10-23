@@ -45,9 +45,7 @@ function SubscriptionsContent() {
             <Alert variant='default' className='hidden px-3 py-2 sm:flex'>
               <Info className='h-4 w-4' />
               <AlertDescription className='text-xs'>
-                {t(
-                  'Stripe/Creem requires creating products on the third-party platform and entering the ID'
-                )}
+                {t('Subscriptions are purchased with the user balance only')}
               </AlertDescription>
             </Alert>
             <SubscriptionsPrimaryButtons />

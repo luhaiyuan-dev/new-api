@@ -145,6 +145,34 @@ function isAuthTokenRotation(value: unknown): value is AuthTokenRotation {
   )
 }
 
+const AUTH_SESSION_HINT_KEY = 'new-api:auth-session-hint'
+
+// The refresh cookie is HttpOnly, so the client cannot see whether a session
+// exists. Remember locally that this browser signed in at least once: only then
+// is the cookie refresh at bootstrap worth a critical rate-limit slot, which is
+// shared with login. Blocked storage falls back to always refreshing.
+function remembersAuthSession(): boolean {
+  if (typeof window === 'undefined') return true
+  try {
+    return window.localStorage.getItem(AUTH_SESSION_HINT_KEY) === '1'
+  } catch {
+    return true
+  }
+}
+
+function rememberAuthSession(present: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (present) {
+      window.localStorage.setItem(AUTH_SESSION_HINT_KEY, '1')
+    } else {
+      window.localStorage.removeItem(AUTH_SESSION_HINT_KEY)
+    }
+  } catch {
+    // Storage unavailable: the in-memory session still works for this page.
+  }
+}
+
 export function applyAuthBundle(
   bundle: AuthBundle,
   synchronizeTabs = true
@@ -152,6 +180,7 @@ export function applyAuthBundle(
   const previousSID = useAuthStore.getState().auth.session?.sid
   authEpoch += 1
   useAuthStore.getState().auth.setBundle(bundle)
+  rememberAuthSession(true)
   if (synchronizeTabs && previousSID !== bundle.session.sid) {
     publishAuthSessionEvent('authenticated', bundle.session.sid)
   }
@@ -189,6 +218,7 @@ export function clearAuthentication(
   const sid = useAuthStore.getState().auth.session?.sid
   authEpoch += 1
   useAuthStore.getState().auth.reset(bootstrapState)
+  rememberAuthSession(false)
   if (synchronizeTabs && sid) {
     publishAuthSessionEvent('signed_out', sid)
   }
@@ -200,6 +230,26 @@ export function clearAuthenticatedClientState(
 ): void {
   queryClient.clear()
   clearAuthentication(synchronizeTabs)
+}
+
+/**
+ * Whether a 401 response can no longer be explained by the session the client
+ * holds right now.
+ *
+ * Requests carry the session id they were issued under. Once that session is
+ * signed out or replaced (sign-out, revoked session, tab switch) its 401s are
+ * leftovers, not an expiry event: they must not trigger a token refresh, a
+ * "Session expired" notice, or another sign-in redirect. Requests issued with
+ * no session at all are only treated as leftovers once authentication has been
+ * definitively resolved as anonymous; while the bootstrap is still unsettled a
+ * refresh may legitimately restore the session.
+ */
+export function isAuthFailureStale(requestSID?: string): boolean {
+  const auth = useAuthStore.getState().auth
+  if (requestSID) {
+    return requestSID !== auth.session?.sid
+  }
+  return auth.bootstrapState === 'complete' && !auth.session
 }
 
 function waitForRefreshRace(delay: number): Promise<void> {
@@ -370,6 +420,12 @@ export async function bootstrapAuthentication(): Promise<RefreshOutcome> {
   const auth = useAuthStore.getState().auth
   const hasStaleSession = Boolean(auth.user && auth.session)
   if (auth.bootstrapState === 'complete' && !hasStaleSession) {
+    return { kind: 'anonymous' }
+  }
+  if (!hasStaleSession && !remembersAuthSession()) {
+    // No session before and none can be restored: do not spend a critical
+    // rate-limit slot on a refresh that can only fail.
+    auth.setBootstrapState('complete')
     return { kind: 'anonymous' }
   }
 

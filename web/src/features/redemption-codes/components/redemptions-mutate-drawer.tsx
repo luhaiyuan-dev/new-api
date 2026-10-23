@@ -50,11 +50,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { getCurrencyLabel } from '@/lib/currency'
 import {
   formatQuota,
   getEditableQuotaStep,
-  parseQuotaFromDollars,
+  parseQuotaFromYuan,
 } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { addTimeToDate } from '@/lib/time'
@@ -203,7 +203,7 @@ export function RedemptionsMutateDrawer({
     if (!isUpdate) {
       const name = form.getValues('name')
       if (!name?.trim()) {
-        const quota = parseQuotaFromDollars(form.getValues('quota_dollars'))
+        const quota = parseQuotaFromYuan(form.getValues('quota_dollars'))
         form.setValue('name', formatQuota(quota), { shouldValidate: true })
       }
     }
@@ -216,14 +216,12 @@ export function RedemptionsMutateDrawer({
     form.setValue('expired_time', newDate)
   }
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
   const quotaStep = getEditableQuotaStep()
   const quotaLabel = t('Quota ({{currency}})', { currency: currencyLabel })
-  const quotaPlaceholder = tokensOnly
-    ? t('Enter quota in tokens')
-    : t('Enter quota in {{currency}}', { currency: currencyLabel })
+  const quotaPlaceholder = t('Enter quota in {{currency}}', {
+    currency: currencyLabel,
+  })
   let submitButtonLabel = t('Save changes')
   if (isLoadingRedemption) {
     submitButtonLabel = t('Loading...')
@@ -306,9 +304,7 @@ export function RedemptionsMutateDrawer({
                         />
                       </FormControl>
                       <FormDescription>
-                        {tokensOnly
-                          ? t('Enter the quota amount in tokens')
-                          : t('Enter the quota amount in {{currency}}', {
+                        {t('Enter the quota amount in {{currency}}', {
                               currency: currencyLabel,
                             })}
                       </FormDescription>

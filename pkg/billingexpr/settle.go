@@ -3,12 +3,13 @@ package billingexpr
 import "github.com/QuantumNous/new-api/common"
 
 // quotaConversion converts raw expression output to quota based on the
-// expression version. This is the central dispatch point for future versions
-// that may use a different conversion formula.
-func quotaConversion(exprOutput float64, snap *BillingSnapshot) float64 {
+// expression version and billing unit. Token-unit expressions keep the
+// historical "price per 1M tokens" formula; media units multiply by the
+// resolved quantity and QuotaPerUnit.
+func quotaConversion(exprOutput float64, snap *BillingSnapshot, params TokenParams) float64 {
 	switch snap.ExprVersion {
-	default: // v1: coefficients are $/1M tokens prices
-		return exprOutput / 1_000_000 * snap.QuotaPerUnit
+	default: // v1
+		return QuotaFromCost(exprOutput, snap.BillingUnit, params)
 	}
 }
 
@@ -19,12 +20,14 @@ func ComputeTieredQuota(snap *BillingSnapshot, params TokenParams) (TieredResult
 }
 
 func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, request RequestInput) (TieredResult, error) {
+	params = snap.Media.Apply(params)
+
 	cost, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
 	if err != nil {
 		return TieredResult{}, err
 	}
 
-	quotaBeforeGroup := quotaConversion(cost, snap)
+	quotaBeforeGroup := quotaConversion(cost, snap, params)
 	afterGroup, clamp := common.QuotaRoundChecked(quotaBeforeGroup * snap.GroupRatio)
 	crossed := trace.MatchedTier != snap.EstimatedTier
 

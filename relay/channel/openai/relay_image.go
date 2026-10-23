@@ -27,6 +27,9 @@ func updateOpenAIImageCount(info *relaycommon.RelayInfo, count int64) {
 		return
 	}
 	info.PriceData.AddOtherRatio("n", float64(count))
+	if info.PriceData.MediaBilling != nil {
+		info.PriceData.MediaBilling.Quantity = float64(count)
+	}
 }
 
 // OpenaiImageHandler handles non-streaming OpenAI image responses

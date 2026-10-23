@@ -31,6 +31,7 @@ import {
 } from '../api'
 import type {
   DifferencesMap,
+  MediaDifferences,
   RatioType,
   UpstreamChannel,
   UpstreamConfig,
@@ -56,10 +57,12 @@ import {
   applyResolutionSelection,
   applyResolutionSelections,
   deleteResolutionField,
+  mergeMediaSpecs,
   type ResolutionRemovalPlan,
   type ResolutionSelection,
   type ResolutionsMap,
 } from './upstream-ratio-sync-helpers'
+import { MediaSpecSyncSection } from './media-spec-sync-section'
 import { UpstreamRatioSyncTable } from './upstream-ratio-sync-table'
 
 // ---------------------------------------------------------------------------
@@ -79,6 +82,7 @@ type UpstreamRatioSyncProps = {
     'billing_setting.billing_mode': string
     'billing_setting.billing_expr': string
   }
+  mediaModelsJson?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +98,8 @@ function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
   if (channel.type === OPENROUTER_CHANNEL_TYPE) return OPENROUTER_ENDPOINT
   return DEFAULT_ENDPOINT
 }
+
+const MEDIA_MODELS_OPTION_KEY = 'media_billing_setting.models'
 
 function optionKeyBySyncField(ratioType: string): string {
   const explicit: Record<string, string> = {
@@ -119,7 +125,10 @@ function parseJsonRecord<T>(raw: string | undefined | null): Record<string, T> {
 // Component
 // ---------------------------------------------------------------------------
 
-export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
+export function UpstreamRatioSync({
+  modelRatios,
+  mediaModelsJson,
+}: UpstreamRatioSyncProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
@@ -130,6 +139,10 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     Record<number, string>
   >({})
   const [differences, setDifferences] = useState<DifferencesMap>({})
+  const [mediaDifferences, setMediaDifferences] = useState<MediaDifferences>({})
+  const [mediaSelections, setMediaSelections] = useState<Record<string, string>>(
+    {}
+  )
   const [resolutions, setResolutions] = useState<ResolutionsMap>({})
   const [conflictItems, setConflictItems] = useState<ConflictItem[]>([])
   const [confirmLoading, setConfirmLoading] = useState(false)
@@ -168,7 +181,11 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         return
       }
 
-      const { differences: diffs, test_results } = data.data
+      const {
+        differences: diffs,
+        media_differences: mediaDiffs,
+        test_results,
+      } = data.data
 
       const errorResults = test_results.filter((r) => r.status === 'error')
       if (errorResults.length > 0) {
@@ -179,9 +196,14 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       }
 
       setDifferences(diffs)
+      setMediaDifferences(mediaDiffs ?? {})
+      setMediaSelections({})
       setResolutions({})
 
-      if (Object.keys(diffs).length === 0) {
+      if (
+        Object.keys(diffs).length === 0 &&
+        Object.keys(mediaDiffs ?? {}).length === 0
+      ) {
         toast.success(t('No price differences found'))
       } else {
         toast.success(t('Upstream prices fetched successfully'))
@@ -218,11 +240,31 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       })
 
       setResolutions({})
+      setMediaDifferences((prev) => {
+        const next = { ...prev }
+        Object.keys(mediaSelections).forEach((model) => {
+          delete next[model]
+        })
+        return next
+      })
+      setMediaSelections({})
     },
     onError: (error: Error) => {
       toast.error(error.message || t('Failed to sync prices'))
     },
   })
+
+  const handleSelectMediaSpec = (model: string, channel: string | null) => {
+    setMediaSelections((prev) => {
+      const next = { ...prev }
+      if (channel) {
+        next[model] = channel
+      } else {
+        delete next[model]
+      }
+      return next
+    })
+  }
 
   const handleOpenChannelDialog = () => {
     setChannelDialogOpen(true)
@@ -383,6 +425,20 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         value: JSON.stringify(value, null, 2),
       }))
 
+      try {
+        const mediaUpdate = mergeMediaSpecs(
+          mediaModelsJson,
+          mediaDifferences,
+          mediaSelections
+        )
+        if (mediaUpdate) {
+          updates.push({ key: MEDIA_MODELS_OPTION_KEY, value: mediaUpdate })
+        }
+      } catch {
+        toast.error(t('Media pricing models must be valid JSON'))
+        return false
+      }
+
       return new Promise<boolean>((resolve) => {
         syncMutate(updates, {
           onSuccess: () => resolve(true),
@@ -390,7 +446,14 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         })
       })
     },
-    [resolutions, syncMutate]
+    [
+      mediaDifferences,
+      mediaModelsJson,
+      mediaSelections,
+      resolutions,
+      syncMutate,
+      t,
+    ]
   )
 
   const findSourceChannel = (
@@ -471,7 +534,9 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     }
   }
 
-  const hasSelections = Object.keys(resolutions).length > 0
+  const hasSelections =
+    Object.keys(resolutions).length > 0 ||
+    Object.keys(mediaSelections).length > 0
   const isLoading = fetchMutation.isPending || isSyncPending || confirmLoading
 
   return (
@@ -495,6 +560,13 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
           </Button>
         </div>
       </div>
+
+      <MediaSpecSyncSection
+        differences={mediaDifferences}
+        selections={mediaSelections}
+        isDisabled={isLoading}
+        onSelect={handleSelectMediaSpec}
+      />
 
       <div className='min-h-0 flex-1'>
         <UpstreamRatioSyncTable

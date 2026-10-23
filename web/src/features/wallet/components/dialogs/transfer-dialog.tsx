@@ -26,8 +26,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   formatQuota,
-  parseQuotaFromDollars,
-  quotaUnitsToDollars,
+  parseQuotaFromYuan,
+  quotaUnitsToYuan,
 } from '@/lib/format'
 import {
   DEFAULT_CURRENCY_CONFIG,
@@ -56,10 +56,10 @@ export function TransferDialog({
       ? currencyConfig.quotaPerUnit
       : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
   )
-  const minimumAmount = quotaUnitsToDollars(minimumQuota)
-  const maximumAmount = quotaUnitsToDollars(availableQuota)
+  const minimumAmount = quotaUnitsToYuan(minimumQuota)
+  const maximumAmount = quotaUnitsToYuan(availableQuota)
   const [amount, setAmount] = useState(minimumAmount)
-  const transferQuota = parseQuotaFromDollars(amount)
+  const transferQuota = parseQuotaFromYuan(amount)
   const canTransfer =
     Number.isFinite(amount) &&
     transferQuota >= minimumQuota &&

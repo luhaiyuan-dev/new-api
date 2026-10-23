@@ -29,10 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Skeleton } from '@/components/ui/skeleton'
-import { formatLocalCurrencyAmount } from '@/lib/currency'
-
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
@@ -41,12 +37,10 @@ interface PaymentConfirmDialogProps {
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
   topupAmount: number
-  paymentAmount: number
+  /** 实付金额：命中充值档位折扣时低于充值金额 */
+  payableAmount?: number
   paymentMethod: PaymentMethod | undefined
-  calculating: boolean
   processing: boolean
-  discountRate?: number
-  usdExchangeRate?: number
 }
 
 export function PaymentConfirmDialog({
@@ -54,17 +48,13 @@ export function PaymentConfirmDialog({
   onOpenChange,
   onConfirm,
   topupAmount,
-  paymentAmount,
+  payableAmount,
   paymentMethod,
-  calculating,
   processing,
-  discountRate = DEFAULT_DISCOUNT_RATE,
-  usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
-  const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
-  const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
-  const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const paid = payableAmount ?? topupAmount
+  const hasDiscount = paid < topupAmount
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -79,49 +69,32 @@ export function PaymentConfirmDialog({
         </AlertDialogHeader>
 
         <div className='space-y-3 py-3 sm:space-y-4 sm:py-4'>
-          <div className='flex items-center justify-between'>
-            <span className='text-muted-foreground text-sm'>
-              {t('Topup Amount')}
-            </span>
-            <span className='text-lg font-semibold'>
-              {formatLocalCurrencyAmount(topupAmount * usdExchangeRate, {
-                digitsLarge: 2,
-                digitsSmall: 2,
-                abbreviate: false,
-              })}
-            </span>
-          </div>
+          {hasDiscount && (
+            <div className='flex items-center justify-between'>
+              <span className='text-muted-foreground text-sm'>
+                {t('Recharge Amount')}
+              </span>
+              <span className='text-muted-foreground text-sm tabular-nums line-through'>
+                {formatCurrency(topupAmount)}
+              </span>
+            </div>
+          )}
 
           <div className='flex items-center justify-between'>
             <span className='text-muted-foreground text-sm'>
               {t('You Pay')}
             </span>
-            {calculating ? (
-              <Skeleton className='h-6 w-24' />
-            ) : (
-              <div className='flex items-baseline gap-2'>
-                <span className='text-2xl font-semibold'>
-                  {formatCurrency(paymentAmount)}
+            <div className='flex items-center gap-2'>
+              <span className='text-2xl font-semibold tabular-nums'>
+                {formatCurrency(paid)}
+              </span>
+              {hasDiscount && (
+                <span className='rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400'>
+                  {t('Discount')}
                 </span>
-                {hasDiscount && (
-                  <span className='text-muted-foreground text-sm line-through'>
-                    {formatCurrency(originalAmount)}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {hasDiscount && !calculating && (
-            <div className='bg-muted/50 rounded-lg p-3'>
-              <div className='flex items-center justify-between text-sm'>
-                <span className='text-muted-foreground'>{t('You save')}</span>
-                <span className='font-semibold text-green-600'>
-                  {formatCurrency(discountAmount)}
-                </span>
-              </div>
+              )}
             </div>
-          )}
+          </div>
 
           <div className='border-t pt-4'>
             <div className='flex items-center justify-between'>

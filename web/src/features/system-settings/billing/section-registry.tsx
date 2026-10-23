@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
@@ -38,10 +37,12 @@ const getModelDefaults = (settings: BillingSettings) => ({
   ExposeRatioEnabled: settings.ExposeRatioEnabled,
   BillingMode: settings['billing_setting.billing_mode'],
   BillingExpr: settings['billing_setting.billing_expr'],
+  MediaModels: settings['media_billing_setting.models'],
+  MediaEnabled: settings['media_billing_setting.enabled'],
+  MediaPolicy: settings['media_billing_setting.unknown_tier_policy'],
 })
 
 const getGroupDefaults = (settings: BillingSettings) => ({
-  TopupGroupRatio: settings.TopupGroupRatio,
   GroupRatio: settings.GroupRatio,
   UserUsableGroups: settings.UserUsableGroups,
   GroupGroupRatio: settings.GroupGroupRatio,
@@ -86,18 +87,7 @@ const BILLING_SECTIONS = [
       <PricingSection
         defaultValues={{
           QuotaPerUnit: settings.QuotaPerUnit,
-          USDExchangeRate: settings.USDExchangeRate,
-          DisplayInCurrencyEnabled: settings.DisplayInCurrencyEnabled,
           DisplayTokenStatEnabled: settings.DisplayTokenStatEnabled,
-          general_setting: {
-            quota_display_type: parseCurrencyDisplayType(
-              settings['general_setting.quota_display_type']
-            ),
-            custom_currency_symbol:
-              settings['general_setting.custom_currency_symbol'] ?? '¤',
-            custom_currency_exchange_rate:
-              settings['general_setting.custom_currency_exchange_rate'] ?? 1,
-          },
         }}
       />
     ),
@@ -134,50 +124,24 @@ const BILLING_SECTIONS = [
     build: (settings: BillingSettings) => (
       <PaymentSettingsSection
         defaultValues={{
-          PayAddress: settings.PayAddress,
-          EpayId: settings.EpayId,
-          EpayKey: settings.EpayKey,
-          Price: settings.Price,
           MinTopUp: settings.MinTopUp,
           CustomCallbackAddress: settings.CustomCallbackAddress,
-          PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
-          AmountDiscount: settings['payment_setting.amount_discount'],
-          StripeApiSecret: settings.StripeApiSecret,
-          StripeWebhookSecret: settings.StripeWebhookSecret,
-          StripePriceId: settings.StripePriceId,
-          StripeUnitPrice: settings.StripeUnitPrice,
-          StripeMinTopUp: settings.StripeMinTopUp,
-          StripePromotionCodesEnabled: settings.StripePromotionCodesEnabled,
-          CreemApiKey: settings.CreemApiKey,
-          CreemWebhookSecret: settings.CreemWebhookSecret,
-          CreemTestMode: settings.CreemTestMode,
-          CreemProducts: settings.CreemProducts,
+          AmountDiscount: settings['payment_setting.amount_discount'] ?? '',
+          WechatAppId: settings.WechatAppId ?? '',
+          WechatMchId: settings.WechatMchId ?? '',
+          WechatMchSerialNo: settings.WechatMchSerialNo ?? '',
+          WechatApiV3Key: settings.WechatApiV3Key ?? '',
+          WechatMchPrivateKey: settings.WechatMchPrivateKey ?? '',
+          WechatMinTopUp: settings.WechatMinTopUp ?? 1,
+          WechatOrderExpireMinutes: settings.WechatOrderExpireMinutes ?? 30,
+          AlipayAppId: settings.AlipayAppId ?? '',
+          AlipayPrivateKey: settings.AlipayPrivateKey ?? '',
+          AlipayPublicKey: settings.AlipayPublicKey ?? '',
+          AlipaySandbox: settings.AlipaySandbox ?? false,
+          AlipayMinTopUp: settings.AlipayMinTopUp ?? 1,
+          AlipayOrderExpireMinutes: settings.AlipayOrderExpireMinutes ?? 30,
         }}
-        waffoDefaultValues={{
-          WaffoEnabled: settings.WaffoEnabled ?? false,
-          WaffoApiKey: settings.WaffoApiKey ?? '',
-          WaffoPrivateKey: settings.WaffoPrivateKey ?? '',
-          WaffoPublicCert: settings.WaffoPublicCert ?? '',
-          WaffoSandboxPublicCert: settings.WaffoSandboxPublicCert ?? '',
-          WaffoSandboxApiKey: settings.WaffoSandboxApiKey ?? '',
-          WaffoSandboxPrivateKey: settings.WaffoSandboxPrivateKey ?? '',
-          WaffoSandbox: settings.WaffoSandbox ?? false,
-          WaffoMerchantId: settings.WaffoMerchantId ?? '',
-          WaffoCurrency: settings.WaffoCurrency ?? 'USD',
-          WaffoUnitPrice: settings.WaffoUnitPrice ?? 1,
-          WaffoMinTopUp: settings.WaffoMinTopUp ?? 1,
-          WaffoNotifyUrl: settings.WaffoNotifyUrl ?? '',
-          WaffoReturnUrl: settings.WaffoReturnUrl ?? '',
-          WaffoPayMethods: settings.WaffoPayMethods ?? '[]',
-        }}
-        waffoPancakeDefaultValues={{
-          WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
-          WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
-          WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
-        }}
-        waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
-        waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
         complianceDefaults={{
           confirmed: settings['payment_setting.compliance_confirmed'] ?? false,
           termsVersion:

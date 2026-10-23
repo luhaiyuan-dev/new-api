@@ -28,6 +28,13 @@ export const Route = createFileRoute(
   '/_authenticated/system-settings/models/$section'
 )({
   beforeLoad: ({ params }) => {
+    // Media pricing moved into the unified model pricing page.
+    if (params.section === 'media-pricing') {
+      throw redirect({
+        to: '/system-settings/billing/$section',
+        params: { section: 'model-pricing' },
+      })
+    }
     const validSections = MODELS_SECTION_IDS as unknown as string[]
     if (!validSections.includes(params.section)) {
       throw redirect({

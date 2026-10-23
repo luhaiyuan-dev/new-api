@@ -48,6 +48,7 @@ export const FILTER_ALL = 'all'
 export const QUOTA_TYPES = {
   ALL: 'all',
   TOKEN: 'token',
+  DYNAMIC: 'dynamic',
   REQUEST: 'request',
 } as const
 
@@ -60,7 +61,32 @@ export function getQuotaTypeLabels(
   return {
     [QUOTA_TYPES.ALL]: t('All Models'),
     [QUOTA_TYPES.TOKEN]: t('Token-based'),
+    [QUOTA_TYPES.DYNAMIC]: t('Dynamic Pricing'),
     [QUOTA_TYPES.REQUEST]: t('Per Request'),
+  }
+}
+
+/** Media kind options (mirrors the backend media price table kinds) */
+export const MEDIA_KINDS = {
+  ALL: 'all',
+  IMAGE: 'image',
+  VIDEO: 'video',
+  AUDIO: 'audio',
+  MUSIC: 'music',
+} as const
+
+export type MediaKindOption = (typeof MEDIA_KINDS)[keyof typeof MEDIA_KINDS]
+
+/** Media kind labels */
+export function getMediaKindLabels(
+  t: TFunction
+): Record<MediaKindOption, string> {
+  return {
+    [MEDIA_KINDS.ALL]: t('All Types'),
+    [MEDIA_KINDS.IMAGE]: t('Image'),
+    [MEDIA_KINDS.VIDEO]: t('Video'),
+    [MEDIA_KINDS.AUDIO]: t('Audio'),
+    [MEDIA_KINDS.MUSIC]: t('Music'),
   }
 }
 

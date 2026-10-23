@@ -224,7 +224,7 @@ export const ContextContentFooter = ({
 }: ContextContentFooterProps) => {
   const { t } = useTranslation()
   const { modelId, usage } = useContextValue()
-  const costUSD = modelId
+  const costCny = modelId
     ? getUsage({
         modelId,
         usage: {
@@ -233,10 +233,9 @@ export const ContextContentFooter = ({
         },
       }).costUSD?.totalUSD
     : undefined
-  const totalCost = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(costUSD ?? 0)
+  const totalCost = new Intl.NumberFormat('zh-CN', { style: 'currency',
+    currency: 'CNY',
+  }).format(costCny ?? 0)
 
   return (
     <div
@@ -281,9 +280,8 @@ export const ContextInputUsage = ({
         usage: { input: inputTokens, output: 0 },
       }).costUSD?.totalUSD
     : undefined
-  const inputCostText = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  const inputCostText = new Intl.NumberFormat('zh-CN', { style: 'currency',
+    currency: 'CNY',
   }).format(inputCost ?? 0)
 
   return (
@@ -322,9 +320,8 @@ export const ContextOutputUsage = ({
         usage: { input: 0, output: outputTokens },
       }).costUSD?.totalUSD
     : undefined
-  const outputCostText = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  const outputCostText = new Intl.NumberFormat('zh-CN', { style: 'currency',
+    currency: 'CNY',
   }).format(outputCost ?? 0)
 
   return (
@@ -363,9 +360,8 @@ export const ContextReasoningUsage = ({
         usage: { reasoningTokens },
       }).costUSD?.totalUSD
     : undefined
-  const reasoningCostText = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  const reasoningCostText = new Intl.NumberFormat('zh-CN', { style: 'currency',
+    currency: 'CNY',
   }).format(reasoningCost ?? 0)
 
   return (
@@ -404,9 +400,8 @@ export const ContextCacheUsage = ({
         usage: { cacheReads: cacheTokens, input: 0, output: 0 },
       }).costUSD?.totalUSD
     : undefined
-  const cacheCostText = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  const cacheCostText = new Intl.NumberFormat('zh-CN', { style: 'currency',
+    currency: 'CNY',
   }).format(cacheCost ?? 0)
 
   return (

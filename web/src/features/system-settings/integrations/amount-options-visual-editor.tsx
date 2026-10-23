@@ -20,10 +20,8 @@ import { Plus, X } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isArray } from '../utils/json-validators'
@@ -91,76 +89,58 @@ export function AmountOptionsVisualEditor({
   }
 
   return (
-    <div className='space-y-4'>
-      <div>
-        <p className='text-muted-foreground mb-3 text-sm'>
-          {t('Preset recharge amounts displayed to users')}
-        </p>
-
-        {amounts.length === 0 ? (
-          <div className='text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm'>
-            {t(
-              'No amount options configured. Add amounts below to get started.'
-            )}
-          </div>
-        ) : (
-          <div className='flex flex-wrap gap-2'>
-            {amounts.map((amount) => (
-              <StatusBadge
-                key={amount}
-                variant='neutral'
-                className='text-base'
-                copyable={false}
-              >
-                <span className='font-mono'>${amount}</span>
-                <Button
-                  type='button'
-                  variant='ghost'
-                  size='icon-sm'
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleRemove(amount)
-                  }}
-                  className='hover:bg-muted-foreground/20 size-auto p-0.5'
-                  aria-label={t('Remove ${{amount}}', { amount })}
-                >
-                  <X className='h-3.5 w-3.5' />
-                </Button>
-              </StatusBadge>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className='flex flex-col gap-2 sm:flex-row sm:items-end'>
-        <div className='flex-1'>
-          <Label htmlFor='new-amount' className='mb-2 block'>
-            {t('Add new amount')}
-          </Label>
-          <Input
-            id='new-amount'
-            type='number'
-            step='0.01'
-            min='0'
-            placeholder={t('e.g., 100')}
-            value={newAmount}
-            onChange={(e) => setNewAmount(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+    <div className='space-y-3'>
+      {amounts.length === 0 ? (
+        <div className='text-muted-foreground rounded-lg border border-dashed px-4 py-6 text-center text-sm'>
+          {t('No amount options configured. Add amounts below to get started.')}
         </div>
+      ) : (
+        <div className='flex flex-wrap gap-2'>
+          {amounts.map((amount) => (
+            <span
+              key={amount}
+              className='border-border/70 bg-muted/40 inline-flex h-8 max-w-full items-center gap-1 rounded-full border pr-1 pl-3 text-sm'
+            >
+              <span className='font-mono font-medium tabular-nums'>
+                ¥{amount}
+              </span>
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-xs'
+                onClick={() => handleRemove(amount)}
+                className='text-muted-foreground hover:bg-background hover:text-foreground size-6 shrink-0 rounded-full'
+                aria-label={t('Remove ${{amount}}', { amount })}
+              >
+                <X className='size-3.5' />
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className='flex items-center gap-2'>
+        <Input
+          type='number'
+          step='0.01'
+          min='0'
+          placeholder={t('e.g., 100')}
+          aria-label={t('Add new amount')}
+          className='max-w-40'
+          value={newAmount}
+          onChange={(e) => setNewAmount(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
         <Button
           type='button'
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            handleAdd()
-          }}
+          variant='outline'
+          size='sm'
+          onClick={handleAdd}
           disabled={!newAmount || parseFloat(newAmount) <= 0}
-          className='w-full sm:w-auto'
+          className='h-8 shrink-0'
         >
-          <Plus className='h-4 w-4 sm:mr-2' />
-          <span className='sm:inline'>{t('Add')}</span>
+          <Plus className='size-3.5' />
+          {t('Add')}
         </Button>
       </div>
     </div>

@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Code2, Eye, ShieldAlert } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Code2, Eye, Info, ShieldAlert } from 'lucide-react'
 import * as React from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -33,6 +33,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -48,37 +49,21 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
-import { confirmPaymentCompliance } from '../api'
-import {
-  SettingsForm,
-  SettingsSwitchContent,
-  SettingsSwitchItem,
-} from '../components/settings-form-layout'
+import { confirmPaymentCompliance, getPaymentGatewayStatus } from '../api'
+import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { isObjectRecord } from '../utils/json-validators'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
-import { CreemProductsVisualEditor } from './creem-products-visual-editor'
-import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
   getJsonError,
   normalizeJsonForComparison,
   removeTrailingSlash,
 } from './utils'
-import { saveWaffoPancakeConfig } from './waffo-pancake-api'
-import {
-  WaffoPancakeSettingsSection,
-  type WaffoPancakeBinding,
-  type WaffoPancakeSettingsValues,
-} from './waffo-pancake-settings-section'
-import {
-  type PayMethod,
-  WaffoSettingsSection,
-  type WaffoSettingsValues,
-} from './waffo-settings-section'
 
 function isHttpOriginUrl(value: string) {
   const trimmed = value.trim()
@@ -94,31 +79,21 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
+// 最低充值金额在后端以整数元存储（strconv.Atoi），小数会被静默丢弃，
+// 因此这里只接受整数，0 表示继承全局设置。
+const minTopUpAmount = z.coerce
+  .number()
+  .int('Amount must be a whole number')
+  .min(0)
+
 const paymentSchema = z.object({
-  PayAddress: z.string().refine((value) => {
-    const trimmed = value.trim()
-    if (!trimmed) return true
-    return /^https?:\/\//.test(trimmed)
-  }, 'Provide a valid callback URL starting with http:// or https://'),
-  EpayId: z.string(),
-  EpayKey: z.string(),
-  Price: z.coerce.number().min(0),
-  MinTopUp: z.coerce.number().min(0),
+  MinTopUp: minTopUpAmount,
   CustomCallbackAddress: z
     .string()
     .refine(
       isHttpOriginUrl,
       'Enter only a top-level callback domain, for example https://api.example.com, without any path.'
     ),
-  PayMethods: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value)
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
   AmountOptions: z.string().superRefine((value, ctx) => {
     const error = getJsonError(value, (parsed) => Array.isArray(parsed))
     if (error) {
@@ -129,64 +104,65 @@ const paymentSchema = z.object({
     }
   }),
   AmountDiscount: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(
-      value,
-      (parsed) =>
-        !!parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-    )
+    const error = getJsonError(value, (parsed) => {
+      if (!isObjectRecord(parsed)) return false
+      return Object.entries(parsed).every(([amount, rate]) => {
+        const parsedAmount = Number(amount)
+        return (
+          Number.isInteger(parsedAmount) &&
+          parsedAmount > 0 &&
+          typeof rate === 'number' &&
+          rate > 0 &&
+          rate <= 1
+        )
+      })
+    })
     if (error) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: error,
+        message:
+          error === 'JSON structure is invalid'
+            ? 'Discounts must be a JSON object keyed by recharge amount with rates greater than 0 and at most 1, for example {"100": 0.9}'
+            : error,
       })
     }
   }),
-  StripeApiSecret: z.string(),
-  StripeWebhookSecret: z.string(),
-  StripePriceId: z.string(),
-  StripeUnitPrice: z.coerce.number().min(0),
-  StripeMinTopUp: z.coerce.number().min(0),
-  StripePromotionCodesEnabled: z.boolean(),
-  CreemApiKey: z.string(),
-  CreemWebhookSecret: z.string(),
-  CreemTestMode: z.boolean(),
-  CreemProducts: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value, (parsed) => Array.isArray(parsed))
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  WaffoEnabled: z.boolean(),
-  WaffoApiKey: z.string(),
-  WaffoPrivateKey: z.string(),
-  WaffoPublicCert: z.string(),
-  WaffoSandboxPublicCert: z.string(),
-  WaffoSandboxApiKey: z.string(),
-  WaffoSandboxPrivateKey: z.string(),
-  WaffoSandbox: z.boolean(),
-  WaffoMerchantId: z.string(),
-  WaffoCurrency: z.string(),
-  WaffoUnitPrice: z.coerce.number().min(0),
-  WaffoMinTopUp: z.coerce.number().min(1),
-  WaffoNotifyUrl: z.string(),
-  WaffoReturnUrl: z.string(),
-  WaffoPancakeMerchantID: z.string(),
-  WaffoPancakePrivateKey: z.string(),
-  WaffoPancakeReturnURL: z.string(),
+  WechatAppId: z.string(),
+  WechatMchId: z.string(),
+  WechatMchSerialNo: z.string(),
+  WechatApiV3Key: z.string(),
+  WechatMchPrivateKey: z.string(),
+  WechatMinTopUp: minTopUpAmount,
+  WechatOrderExpireMinutes: z.coerce.number().min(1),
+  AlipayAppId: z.string(),
+  AlipayPrivateKey: z.string(),
+  AlipayPublicKey: z.string(),
+  AlipaySandbox: z.boolean(),
+  AlipayMinTopUp: minTopUpAmount,
+  AlipayOrderExpireMinutes: z.coerce.number().min(1),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
-type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
-type PaymentBaseFormValues = Omit<
-  PaymentFormValues,
-  keyof WaffoFormFieldValues | keyof WaffoPancakeSettingsValues
->
 
 const CURRENT_COMPLIANCE_TERMS_VERSION = 'v1'
 const paymentTabContentClassName = 'mt-6 min-w-0'
+
+// 网关类型与配置项键名到 i18n 文案的映射：后端只返回键名，文案统一由前端翻译。
+const GATEWAY_NAME_KEYS: Record<string, string> = {
+  wechat: 'WeChat Pay',
+  alipay: 'Alipay',
+}
+
+const GATEWAY_CREDENTIAL_KEYS: Record<string, string> = {
+  WechatAppId: 'WeChat Pay App ID',
+  WechatMchId: 'WeChat Pay merchant ID',
+  WechatMchSerialNo: 'Merchant API certificate serial number',
+  WechatApiV3Key: 'APIv3 key',
+  WechatMchPrivateKey: 'Merchant API certificate private key',
+  AlipayAppId: 'Alipay App ID',
+  AlipayPrivateKey: 'Application private key',
+  AlipayPublicKey: 'Alipay public key',
+}
 
 type PaymentComplianceDefaults = {
   confirmed: boolean
@@ -196,41 +172,56 @@ type PaymentComplianceDefaults = {
 }
 
 type PaymentSettingsSectionProps = {
-  defaultValues: PaymentBaseFormValues
-  waffoDefaultValues: WaffoSettingsValues
-  waffoPancakeDefaultValues: WaffoPancakeSettingsValues
-  waffoPancakeProvisionedStoreID?: string
-  waffoPancakeProvisionedProductID?: string
+  defaultValues: PaymentFormValues
   complianceDefaults: PaymentComplianceDefaults
 }
 
-function parseWaffoPayMethods(value: string): PayMethod[] {
-  try {
-    const parsed = JSON.parse(value || '[]')
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
+type EditorModeToggleProps = {
+  visualMode: boolean
+  onToggle: () => void
+}
+
+function EditorModeToggle(props: EditorModeToggleProps) {
+  const { t } = useTranslation()
+
+  return (
+    <Button
+      type='button'
+      variant='ghost'
+      size='sm'
+      onClick={props.onToggle}
+      className='text-muted-foreground shrink-0'
+    >
+      {props.visualMode ? (
+        <>
+          <Code2 className='h-3.5 w-3.5' />
+          {t('JSON Editor')}
+        </>
+      ) : (
+        <>
+          <Eye className='h-3.5 w-3.5' />
+          {t('Visual Editor')}
+        </>
+      )}
+    </Button>
+  )
 }
 
 export function PaymentSettingsSection({
   defaultValues,
-  waffoDefaultValues,
-  waffoPancakeDefaultValues,
-  waffoPancakeProvisionedStoreID,
-  waffoPancakeProvisionedProductID,
   complianceDefaults,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
+  const gatewayStatusQuery = useQuery({
+    queryKey: ['payment-gateway-status'],
+    queryFn: getPaymentGatewayStatus,
+  })
+  const gatewayStatus = gatewayStatusQuery.data?.data
   const initialFormValues = React.useMemo<PaymentFormValues>(
-    () => ({
-      ...defaultValues,
-      ...waffoDefaultValues,
-      ...waffoPancakeDefaultValues,
-    }),
-    [defaultValues, waffoDefaultValues, waffoPancakeDefaultValues]
+    () => ({ ...defaultValues }),
+    [defaultValues]
   )
   const initialRef = React.useRef(initialFormValues)
   const defaultsSignature = React.useMemo(
@@ -238,40 +229,11 @@ export function PaymentSettingsSection({
     [initialFormValues]
   )
 
-  const [payMethodsVisualMode, setPayMethodsVisualMode] = React.useState(true)
   const [amountOptionsVisualMode, setAmountOptionsVisualMode] =
     React.useState(true)
   const [amountDiscountVisualMode, setAmountDiscountVisualMode] =
     React.useState(true)
-  const [creemProductsVisualMode, setCreemProductsVisualMode] =
-    React.useState(true)
   const [showComplianceDialog, setShowComplianceDialog] = React.useState(false)
-  const [waffoPayMethods, setWaffoPayMethods] = React.useState<PayMethod[]>(
-    () => parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
-  )
-  const [waffoPancakeSelection, setWaffoPancakeSelection] =
-    React.useState<WaffoPancakeBinding>({
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    })
-  const [waffoPancakeSavedBinding, setWaffoPancakeSavedBinding] =
-    React.useState<WaffoPancakeBinding>({
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    })
-
-  React.useEffect(() => {
-    setWaffoPayMethods(parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods))
-  }, [waffoDefaultValues.WaffoPayMethods])
-
-  React.useEffect(() => {
-    const nextBinding = {
-      storeID: waffoPancakeProvisionedStoreID ?? '',
-      productID: waffoPancakeProvisionedProductID ?? '',
-    }
-    setWaffoPancakeSelection(nextBinding)
-    setWaffoPancakeSavedBinding(nextBinding)
-  }, [waffoPancakeProvisionedProductID, waffoPancakeProvisionedStoreID])
 
   const complianceStatements = React.useMemo(
     () => [
@@ -338,6 +300,7 @@ export function PaymentSettingsSection({
         toast.success(t('Compliance confirmed successfully'))
         setShowComplianceDialog(false)
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        queryClient.invalidateQueries({ queryKey: ['payment-gateway-status'] })
       } else {
         toast.error(data.message || t('Failed to confirm compliance'))
       }
@@ -352,177 +315,67 @@ export function PaymentSettingsSection({
     mode: 'onChange', // Enable real-time validation
     defaultValues: {
       ...initialFormValues,
-      PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
       AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
       AmountDiscount: formatJsonForEditor(initialFormValues.AmountDiscount),
-      CreemProducts: formatJsonForEditor(initialFormValues.CreemProducts),
     },
   })
 
   const { isSubmitting } = form.formState
-
-  const setPaymentValue = React.useCallback(
-    (
-      key: keyof PaymentFormValues,
-      value: PaymentFormValues[keyof PaymentFormValues]
-    ) => {
-      form.setValue(
-        key as Parameters<typeof form.setValue>[0],
-        value as Parameters<typeof form.setValue>[1],
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        }
-      )
-    },
-    [form]
-  )
-
-  const setWaffoValue = React.useCallback(
-    <K extends keyof WaffoFormFieldValues>(
-      key: K,
-      value: WaffoFormFieldValues[K]
-    ) => {
-      setPaymentValue(
-        key as keyof PaymentFormValues,
-        value as PaymentFormValues[keyof PaymentFormValues]
-      )
-    },
-    [setPaymentValue]
-  )
-
-  const setWaffoPancakeValue = React.useCallback(
-    <K extends keyof WaffoPancakeSettingsValues>(
-      key: K,
-      value: WaffoPancakeSettingsValues[K]
-    ) => {
-      setPaymentValue(
-        key as keyof PaymentFormValues,
-        value as PaymentFormValues[keyof PaymentFormValues]
-      )
-    },
-    [setPaymentValue]
-  )
 
   React.useEffect(() => {
     const parsedDefaults = JSON.parse(defaultsSignature) as PaymentFormValues
     initialRef.current = parsedDefaults
     form.reset({
       ...parsedDefaults,
-      PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
       AmountDiscount: formatJsonForEditor(parsedDefaults.AmountDiscount),
-      CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
     })
   }, [defaultsSignature, form])
 
   const onSubmit = async (values: PaymentFormValues) => {
     const sanitized = {
-      PayAddress: removeTrailingSlash(values.PayAddress),
-      EpayId: values.EpayId.trim(),
-      EpayKey: values.EpayKey.trim(),
-      Price: values.Price,
       MinTopUp: values.MinTopUp,
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
-      PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
       AmountDiscount: values.AmountDiscount.trim(),
-      StripeApiSecret: values.StripeApiSecret.trim(),
-      StripeWebhookSecret: values.StripeWebhookSecret.trim(),
-      StripePriceId: values.StripePriceId.trim(),
-      StripeUnitPrice: values.StripeUnitPrice,
-      StripeMinTopUp: values.StripeMinTopUp,
-      StripePromotionCodesEnabled: values.StripePromotionCodesEnabled,
-      CreemApiKey: values.CreemApiKey.trim(),
-      CreemWebhookSecret: values.CreemWebhookSecret.trim(),
-      CreemTestMode: values.CreemTestMode,
-      CreemProducts: values.CreemProducts.trim(),
-      WaffoEnabled: values.WaffoEnabled,
-      WaffoSandbox: values.WaffoSandbox,
-      WaffoMerchantId: values.WaffoMerchantId.trim(),
-      WaffoCurrency: values.WaffoCurrency.trim() || 'USD',
-      WaffoUnitPrice: values.WaffoUnitPrice,
-      WaffoMinTopUp: values.WaffoMinTopUp,
-      WaffoNotifyUrl: values.WaffoNotifyUrl.trim(),
-      WaffoReturnUrl: values.WaffoReturnUrl.trim(),
-      WaffoPublicCert: values.WaffoPublicCert.trim(),
-      WaffoSandboxPublicCert: values.WaffoSandboxPublicCert.trim(),
-      WaffoApiKey: values.WaffoApiKey.trim(),
-      WaffoPrivateKey: values.WaffoPrivateKey.trim(),
-      WaffoSandboxApiKey: values.WaffoSandboxApiKey.trim(),
-      WaffoSandboxPrivateKey: values.WaffoSandboxPrivateKey.trim(),
-      WaffoPayMethods: JSON.stringify(waffoPayMethods),
-      WaffoPancakeMerchantID: values.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: values.WaffoPancakePrivateKey.trim(),
-      WaffoPancakeReturnURL: removeTrailingSlash(
-        values.WaffoPancakeReturnURL.trim()
-      ),
+      WechatAppId: values.WechatAppId.trim(),
+      WechatMchId: values.WechatMchId.trim(),
+      WechatMchSerialNo: values.WechatMchSerialNo.trim(),
+      WechatApiV3Key: values.WechatApiV3Key.trim(),
+      WechatMchPrivateKey: values.WechatMchPrivateKey.trim(),
+      WechatMinTopUp: values.WechatMinTopUp,
+      WechatOrderExpireMinutes: values.WechatOrderExpireMinutes,
+      AlipayAppId: values.AlipayAppId.trim(),
+      AlipayPrivateKey: values.AlipayPrivateKey.trim(),
+      AlipayPublicKey: values.AlipayPublicKey.trim(),
+      AlipaySandbox: values.AlipaySandbox,
+      AlipayMinTopUp: values.AlipayMinTopUp,
+      AlipayOrderExpireMinutes: values.AlipayOrderExpireMinutes,
     }
 
     const initial = {
-      PayAddress: removeTrailingSlash(initialRef.current.PayAddress),
-      EpayId: initialRef.current.EpayId.trim(),
-      EpayKey: initialRef.current.EpayKey.trim(),
-      Price: initialRef.current.Price,
       MinTopUp: initialRef.current.MinTopUp,
       CustomCallbackAddress: removeTrailingSlash(
         initialRef.current.CustomCallbackAddress
       ),
-      PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountDiscount: initialRef.current.AmountDiscount.trim(),
-      StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
-      StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
-      StripePriceId: initialRef.current.StripePriceId.trim(),
-      StripeUnitPrice: initialRef.current.StripeUnitPrice,
-      StripeMinTopUp: initialRef.current.StripeMinTopUp,
-      StripePromotionCodesEnabled:
-        initialRef.current.StripePromotionCodesEnabled,
-      CreemApiKey: initialRef.current.CreemApiKey.trim(),
-      CreemWebhookSecret: initialRef.current.CreemWebhookSecret.trim(),
-      CreemTestMode: initialRef.current.CreemTestMode,
-      CreemProducts: initialRef.current.CreemProducts.trim(),
-      WaffoEnabled: initialRef.current.WaffoEnabled,
-      WaffoSandbox: initialRef.current.WaffoSandbox,
-      WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
-      WaffoCurrency: initialRef.current.WaffoCurrency.trim() || 'USD',
-      WaffoUnitPrice: initialRef.current.WaffoUnitPrice,
-      WaffoMinTopUp: initialRef.current.WaffoMinTopUp,
-      WaffoNotifyUrl: initialRef.current.WaffoNotifyUrl.trim(),
-      WaffoReturnUrl: initialRef.current.WaffoReturnUrl.trim(),
-      WaffoPublicCert: initialRef.current.WaffoPublicCert.trim(),
-      WaffoSandboxPublicCert: initialRef.current.WaffoSandboxPublicCert.trim(),
-      WaffoApiKey: initialRef.current.WaffoApiKey.trim(),
-      WaffoPrivateKey: initialRef.current.WaffoPrivateKey.trim(),
-      WaffoSandboxApiKey: initialRef.current.WaffoSandboxApiKey.trim(),
-      WaffoSandboxPrivateKey: initialRef.current.WaffoSandboxPrivateKey.trim(),
-      WaffoPayMethods: JSON.stringify(
-        parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
-      ),
-      WaffoPancakeMerchantID: initialRef.current.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: initialRef.current.WaffoPancakePrivateKey.trim(),
-      WaffoPancakeReturnURL: removeTrailingSlash(
-        initialRef.current.WaffoPancakeReturnURL.trim()
-      ),
+      WechatAppId: initialRef.current.WechatAppId.trim(),
+      WechatMchId: initialRef.current.WechatMchId.trim(),
+      WechatMchSerialNo: initialRef.current.WechatMchSerialNo.trim(),
+      WechatApiV3Key: initialRef.current.WechatApiV3Key.trim(),
+      WechatMchPrivateKey: initialRef.current.WechatMchPrivateKey.trim(),
+      WechatMinTopUp: initialRef.current.WechatMinTopUp,
+      WechatOrderExpireMinutes: initialRef.current.WechatOrderExpireMinutes,
+      AlipayAppId: initialRef.current.AlipayAppId.trim(),
+      AlipayPrivateKey: initialRef.current.AlipayPrivateKey.trim(),
+      AlipayPublicKey: initialRef.current.AlipayPublicKey.trim(),
+      AlipaySandbox: initialRef.current.AlipaySandbox,
+      AlipayMinTopUp: initialRef.current.AlipayMinTopUp,
+      AlipayOrderExpireMinutes: initialRef.current.AlipayOrderExpireMinutes,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
-
-    if (sanitized.PayAddress !== initial.PayAddress) {
-      updates.push({ key: 'PayAddress', value: sanitized.PayAddress })
-    }
-
-    if (sanitized.EpayId !== initial.EpayId) {
-      updates.push({ key: 'EpayId', value: sanitized.EpayId })
-    }
-
-    if (sanitized.EpayKey && sanitized.EpayKey !== initial.EpayKey) {
-      updates.push({ key: 'EpayKey', value: sanitized.EpayKey })
-    }
-
-    if (sanitized.Price !== initial.Price) {
-      updates.push({ key: 'Price', value: sanitized.Price })
-    }
 
     if (sanitized.MinTopUp !== initial.MinTopUp) {
       updates.push({ key: 'MinTopUp', value: sanitized.MinTopUp })
@@ -533,13 +386,6 @@ export function PaymentSettingsSection({
         key: 'CustomCallbackAddress',
         value: sanitized.CustomCallbackAddress,
       })
-    }
-
-    if (
-      normalizeJsonForComparison(sanitized.PayMethods) !==
-      normalizeJsonForComparison(initial.PayMethods)
-    ) {
-      updates.push({ key: 'PayMethods', value: sanitized.PayMethods })
     }
 
     if (
@@ -562,153 +408,91 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
-      sanitized.StripeApiSecret &&
-      sanitized.StripeApiSecret !== initial.StripeApiSecret
-    ) {
-      updates.push({ key: 'StripeApiSecret', value: sanitized.StripeApiSecret })
+    if (sanitized.WechatAppId !== initial.WechatAppId) {
+      updates.push({ key: 'WechatAppId', value: sanitized.WechatAppId })
     }
 
-    if (
-      sanitized.StripeWebhookSecret &&
-      sanitized.StripeWebhookSecret !== initial.StripeWebhookSecret
-    ) {
+    if (sanitized.WechatMchId !== initial.WechatMchId) {
+      updates.push({ key: 'WechatMchId', value: sanitized.WechatMchId })
+    }
+
+    if (sanitized.WechatMchSerialNo !== initial.WechatMchSerialNo) {
       updates.push({
-        key: 'StripeWebhookSecret',
-        value: sanitized.StripeWebhookSecret,
+        key: 'WechatMchSerialNo',
+        value: sanitized.WechatMchSerialNo,
       })
     }
 
-    if (sanitized.StripePriceId !== initial.StripePriceId) {
-      updates.push({ key: 'StripePriceId', value: sanitized.StripePriceId })
-    }
-
-    if (sanitized.StripeUnitPrice !== initial.StripeUnitPrice) {
-      updates.push({ key: 'StripeUnitPrice', value: sanitized.StripeUnitPrice })
-    }
-
-    if (sanitized.StripeMinTopUp !== initial.StripeMinTopUp) {
-      updates.push({ key: 'StripeMinTopUp', value: sanitized.StripeMinTopUp })
+    // 密钥类字段与 EpayKey 一致：仅当输入了新值才提交，避免空值覆盖已存密钥
+    if (
+      sanitized.WechatApiV3Key &&
+      sanitized.WechatApiV3Key !== initial.WechatApiV3Key
+    ) {
+      updates.push({ key: 'WechatApiV3Key', value: sanitized.WechatApiV3Key })
     }
 
     if (
-      sanitized.StripePromotionCodesEnabled !==
-      initial.StripePromotionCodesEnabled
+      sanitized.WechatMchPrivateKey &&
+      sanitized.WechatMchPrivateKey !== initial.WechatMchPrivateKey
     ) {
       updates.push({
-        key: 'StripePromotionCodesEnabled',
-        value: sanitized.StripePromotionCodesEnabled,
+        key: 'WechatMchPrivateKey',
+        value: sanitized.WechatMchPrivateKey,
       })
+    }
+
+    if (sanitized.WechatMinTopUp !== initial.WechatMinTopUp) {
+      updates.push({ key: 'WechatMinTopUp', value: sanitized.WechatMinTopUp })
     }
 
     if (
-      sanitized.CreemApiKey &&
-      sanitized.CreemApiKey !== initial.CreemApiKey
+      sanitized.WechatOrderExpireMinutes !== initial.WechatOrderExpireMinutes
     ) {
-      updates.push({ key: 'CreemApiKey', value: sanitized.CreemApiKey })
+      updates.push({
+        key: 'WechatOrderExpireMinutes',
+        value: sanitized.WechatOrderExpireMinutes,
+      })
+    }
+
+    if (sanitized.AlipayAppId !== initial.AlipayAppId) {
+      updates.push({ key: 'AlipayAppId', value: sanitized.AlipayAppId })
     }
 
     if (
-      sanitized.CreemWebhookSecret &&
-      sanitized.CreemWebhookSecret !== initial.CreemWebhookSecret
+      sanitized.AlipayPrivateKey &&
+      sanitized.AlipayPrivateKey !== initial.AlipayPrivateKey
     ) {
       updates.push({
-        key: 'CreemWebhookSecret',
-        value: sanitized.CreemWebhookSecret,
-      })
-    }
-
-    if (sanitized.CreemTestMode !== initial.CreemTestMode) {
-      updates.push({ key: 'CreemTestMode', value: sanitized.CreemTestMode })
-    }
-
-    if (
-      normalizeJsonForComparison(sanitized.CreemProducts) !==
-      normalizeJsonForComparison(initial.CreemProducts)
-    ) {
-      updates.push({ key: 'CreemProducts', value: sanitized.CreemProducts })
-    }
-
-    if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
-      updates.push({ key: 'WaffoEnabled', value: sanitized.WaffoEnabled })
-    }
-
-    if (sanitized.WaffoSandbox !== initial.WaffoSandbox) {
-      updates.push({ key: 'WaffoSandbox', value: sanitized.WaffoSandbox })
-    }
-
-    if (sanitized.WaffoMerchantId !== initial.WaffoMerchantId) {
-      updates.push({ key: 'WaffoMerchantId', value: sanitized.WaffoMerchantId })
-    }
-
-    if (sanitized.WaffoCurrency !== initial.WaffoCurrency) {
-      updates.push({ key: 'WaffoCurrency', value: sanitized.WaffoCurrency })
-    }
-
-    if (sanitized.WaffoUnitPrice !== initial.WaffoUnitPrice) {
-      updates.push({ key: 'WaffoUnitPrice', value: sanitized.WaffoUnitPrice })
-    }
-
-    if (sanitized.WaffoMinTopUp !== initial.WaffoMinTopUp) {
-      updates.push({ key: 'WaffoMinTopUp', value: sanitized.WaffoMinTopUp })
-    }
-
-    if (sanitized.WaffoNotifyUrl !== initial.WaffoNotifyUrl) {
-      updates.push({ key: 'WaffoNotifyUrl', value: sanitized.WaffoNotifyUrl })
-    }
-
-    if (sanitized.WaffoReturnUrl !== initial.WaffoReturnUrl) {
-      updates.push({ key: 'WaffoReturnUrl', value: sanitized.WaffoReturnUrl })
-    }
-
-    if (sanitized.WaffoPublicCert !== initial.WaffoPublicCert) {
-      updates.push({ key: 'WaffoPublicCert', value: sanitized.WaffoPublicCert })
-    }
-
-    if (sanitized.WaffoSandboxPublicCert !== initial.WaffoSandboxPublicCert) {
-      updates.push({
-        key: 'WaffoSandboxPublicCert',
-        value: sanitized.WaffoSandboxPublicCert,
-      })
-    }
-
-    if (sanitized.WaffoApiKey) {
-      updates.push({ key: 'WaffoApiKey', value: sanitized.WaffoApiKey })
-    }
-
-    if (sanitized.WaffoPrivateKey) {
-      updates.push({ key: 'WaffoPrivateKey', value: sanitized.WaffoPrivateKey })
-    }
-
-    if (sanitized.WaffoSandboxApiKey) {
-      updates.push({
-        key: 'WaffoSandboxApiKey',
-        value: sanitized.WaffoSandboxApiKey,
-      })
-    }
-
-    if (sanitized.WaffoSandboxPrivateKey) {
-      updates.push({
-        key: 'WaffoSandboxPrivateKey',
-        value: sanitized.WaffoSandboxPrivateKey,
+        key: 'AlipayPrivateKey',
+        value: sanitized.AlipayPrivateKey,
       })
     }
 
     if (
-      normalizeJsonForComparison(sanitized.WaffoPayMethods) !==
-      normalizeJsonForComparison(initial.WaffoPayMethods)
+      sanitized.AlipayPublicKey &&
+      sanitized.AlipayPublicKey !== initial.AlipayPublicKey
     ) {
-      updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
+      updates.push({ key: 'AlipayPublicKey', value: sanitized.AlipayPublicKey })
     }
 
-    const hasWaffoPancakeChanges =
-      sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
-      sanitized.WaffoPancakePrivateKey.length > 0 ||
-      sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
-      waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
-      waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
+    if (sanitized.AlipaySandbox !== initial.AlipaySandbox) {
+      updates.push({ key: 'AlipaySandbox', value: sanitized.AlipaySandbox })
+    }
 
-    if (updates.length === 0 && !hasWaffoPancakeChanges) {
+    if (sanitized.AlipayMinTopUp !== initial.AlipayMinTopUp) {
+      updates.push({ key: 'AlipayMinTopUp', value: sanitized.AlipayMinTopUp })
+    }
+
+    if (
+      sanitized.AlipayOrderExpireMinutes !== initial.AlipayOrderExpireMinutes
+    ) {
+      updates.push({
+        key: 'AlipayOrderExpireMinutes',
+        value: sanitized.AlipayOrderExpireMinutes,
+      })
+    }
+
+    if (updates.length === 0) {
       toast.info(t('No changes to save'))
       return
     }
@@ -717,83 +501,8 @@ export function PaymentSettingsSection({
       await updateOption.mutateAsync(update)
     }
 
-    if (!hasWaffoPancakeChanges) {
-      return
-    }
-
-    if (!sanitized.WaffoPancakeMerchantID) {
-      toast.error(t('Merchant ID is required'))
-      return
-    }
-
-    if (!waffoPancakeSelection.storeID || !waffoPancakeSelection.productID) {
-      toast.error(t('Pick or create both a store and a product before saving.'))
-      return
-    }
-
-    try {
-      const body = await saveWaffoPancakeConfig({
-        merchantID: sanitized.WaffoPancakeMerchantID,
-        privateKey: sanitized.WaffoPancakePrivateKey,
-        returnURL: sanitized.WaffoPancakeReturnURL,
-        storeID: waffoPancakeSelection.storeID,
-        productID: waffoPancakeSelection.productID,
-      })
-
-      if (
-        body?.message === 'success' &&
-        typeof body.data === 'object' &&
-        body.data
-      ) {
-        const saved = body.data as { product_id: string; store_id: string }
-        const savedBinding = {
-          storeID: saved.store_id,
-          productID: saved.product_id,
-        }
-        setWaffoPancakeSavedBinding(savedBinding)
-        setWaffoPancakeSelection(savedBinding)
-        queryClient.invalidateQueries({ queryKey: ['system-options'] })
-        toast.success(t('Waffo Pancake settings saved'))
-        return
-      }
-
-      const reason = typeof body?.data === 'string' ? body.data : undefined
-      toast.error(
-        reason
-          ? `${t('Waffo Pancake save failed')}: ${reason}`
-          : t('Waffo Pancake save failed')
-      )
-    } catch (error) {
-      toast.error(
-        `${t('Waffo Pancake save failed')}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
-  }
-
-  const currentFormValues = form.watch()
-  const waffoValues: WaffoSettingsValues = {
-    WaffoEnabled: currentFormValues.WaffoEnabled,
-    WaffoApiKey: currentFormValues.WaffoApiKey,
-    WaffoPrivateKey: currentFormValues.WaffoPrivateKey,
-    WaffoPublicCert: currentFormValues.WaffoPublicCert,
-    WaffoSandboxPublicCert: currentFormValues.WaffoSandboxPublicCert,
-    WaffoSandboxApiKey: currentFormValues.WaffoSandboxApiKey,
-    WaffoSandboxPrivateKey: currentFormValues.WaffoSandboxPrivateKey,
-    WaffoSandbox: currentFormValues.WaffoSandbox,
-    WaffoMerchantId: currentFormValues.WaffoMerchantId,
-    WaffoCurrency: currentFormValues.WaffoCurrency,
-    WaffoUnitPrice: currentFormValues.WaffoUnitPrice,
-    WaffoMinTopUp: currentFormValues.WaffoMinTopUp,
-    WaffoNotifyUrl: currentFormValues.WaffoNotifyUrl,
-    WaffoReturnUrl: currentFormValues.WaffoReturnUrl,
-    WaffoPayMethods: JSON.stringify(waffoPayMethods),
-  }
-  const waffoPancakeValues: WaffoPancakeSettingsValues = {
-    WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
-    WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
-    WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
+    // 保存后重新拉取网关状态，让「未启用 / 缺失项」提示立即反映新配置。
+    queryClient.invalidateQueries({ queryKey: ['payment-gateway-status'] })
   }
 
   return (
@@ -843,6 +552,46 @@ export function PaymentSettingsSection({
         </Alert>
       )}
 
+      {gatewayStatus ? (
+        <div className='mb-6 space-y-3'>
+          <div className='space-y-1'>
+            <h3 className='text-sm font-semibold'>{t('Gateway status')}</h3>
+            <p className='text-muted-foreground text-xs'>
+              {t('Only fully configured gateways are available to users.')}
+            </p>
+          </div>
+          <div className='grid gap-3 md:grid-cols-2'>
+            {gatewayStatus.gateways.map((gateway) => {
+              const missingLabels = gateway.missing.map((key) =>
+                t(GATEWAY_CREDENTIAL_KEYS[key] ?? key)
+              )
+              return (
+                <div
+                  key={gateway.type}
+                  className='border-border/60 bg-muted/20 rounded-lg border p-3'
+                >
+                  <div className='flex items-center justify-between gap-2'>
+                    <span className='text-sm font-medium'>
+                      {t(GATEWAY_NAME_KEYS[gateway.type] ?? gateway.type)}
+                    </span>
+                    <Badge variant={gateway.enabled ? 'default' : 'secondary'}>
+                      {gateway.enabled ? t('Enabled') : t('Disabled')}
+                    </Badge>
+                  </div>
+                  {!gateway.enabled && missingLabels.length > 0 ? (
+                    <p className='text-muted-foreground mt-1.5 text-xs'>
+                      {t('Missing configuration: {{fields}}', {
+                        fields: missingLabels.join(', '),
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <RiskAcknowledgementDialog
         open={showComplianceDialog}
         onOpenChange={setShowComplianceDialog}
@@ -877,20 +626,17 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
+              <TabsList className='grid min-w-80 grid-cols-3'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
-                <TabsTrigger value='epay'>Epay</TabsTrigger>
-                <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
-                <TabsTrigger value='creem'>Creem</TabsTrigger>
-                <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
-                <TabsTrigger value='waffo'>Waffo</TabsTrigger>
+                <TabsTrigger value='wechat'>WeChat Pay</TabsTrigger>
+                <TabsTrigger value='alipay'>Alipay</TabsTrigger>
               </TabsList>
             </div>
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>
+                <div className='space-y-1'>
+                  <h3 className='text-base font-semibold'>
                     {t('General Settings')}
                   </h3>
                   <p className='text-muted-foreground text-sm'>
@@ -898,150 +644,59 @@ export function PaymentSettingsSection({
                   </p>
                 </div>
 
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='Price'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Price (local currency / USD)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'How much to charge for each US dollar of balance (Epay)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
+                <div className='grid gap-4 lg:grid-cols-2 lg:items-start'>
                   <FormField
                     control={form.control}
                     name='MinTopUp'
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
+                      <FormItem className='rounded-xl border p-4'>
+                        <FormLabel>{t('Minimum top-up (CNY)')}</FormLabel>
                         <FormDescription>
-                          {t('Smallest USD amount users can recharge (Epay)')}
+                          {t('Smallest amount users can recharge')}
                         </FormDescription>
+                        <FormControl>
+                          <div className='relative max-w-48'>
+                            <span
+                              aria-hidden='true'
+                              className='text-muted-foreground pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-sm'
+                            >
+                              ¥
+                            </span>
+                            <Input
+                              type='number'
+                              step='1'
+                              min={0}
+                              className='pl-8'
+                              {...safeNumberFieldProps(field)}
+                            />
+                          </div>
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <FormField
-                  control={form.control}
-                  name='PayMethods'
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                        <FormLabel>{t('Payment methods')}</FormLabel>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() =>
-                            setPayMethodsVisualMode(!payMethodsVisualMode)
-                          }
-                          className='w-full sm:w-auto'
-                        >
-                          {payMethodsVisualMode ? (
-                            <>
-                              <Code2 className='mr-2 h-3 w-3' />
-                              {t('JSON Editor')}
-                            </>
-                          ) : (
-                            <>
-                              <Eye className='mr-2 h-3 w-3' />
-                              {t('Visual Editor')}
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <FormControl>
-                        {payMethodsVisualMode ? (
-                          <PaymentMethodsVisualEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                          />
-                        ) : (
-                          <JsonCodeEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                            name={field.name}
-                            onBlur={field.onBlur}
-                            textareaRef={field.ref}
-                            placeholder={t(
-                              '[{"name":"支付宝","type":"alipay","icon":"SiAlipay"}]'
-                            )}
-                            heightClassName='h-40 min-h-40 max-h-40'
-                            aria-invalid={Boolean(
-                              form.formState.errors.PayMethods
-                            )}
-                          />
-                        )}
-                      </FormControl>
-                      <FormDescription>
-                        {t(
-                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className='grid gap-6 md:grid-cols-2 md:items-start'>
                   <FormField
                     control={form.control}
                     name='AmountOptions'
                     render={({ field }) => (
-                      <FormItem>
-                        <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                      <FormItem className='rounded-xl border p-4'>
+                        <div className='flex items-center justify-between gap-2'>
                           <FormLabel>{t('Top-up amount options')}</FormLabel>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            size='sm'
-                            onClick={() =>
+                          <EditorModeToggle
+                            visualMode={amountOptionsVisualMode}
+                            onToggle={() =>
                               setAmountOptionsVisualMode(
                                 !amountOptionsVisualMode
                               )
                             }
-                            className='w-full sm:w-auto'
-                          >
-                            {amountOptionsVisualMode ? (
-                              <>
-                                <Code2 className='mr-2 h-3 w-3' />
-                                {t('JSON Editor')}
-                              </>
-                            ) : (
-                              <>
-                                <Eye className='mr-2 h-3 w-3' />
-                                {t('Visual Editor')}
-                              </>
-                            )}
-                          </Button>
+                          />
                         </div>
+                        <FormDescription>
+                          {amountOptionsVisualMode
+                            ? t('Preset recharge amounts displayed to users')
+                            : t('Preset recharge amounts (JSON array)')}
+                        </FormDescription>
                         <FormControl>
                           {amountOptionsVisualMode ? (
                             <AmountOptionsVisualEditor
@@ -1063,45 +718,40 @@ export function PaymentSettingsSection({
                             />
                           )}
                         </FormControl>
-                        <FormDescription>
-                          {t('Preset recharge amounts (JSON array)')}
-                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                </div>
 
-                  <FormField
-                    control={form.control}
-                    name='AmountDiscount'
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                <FormField
+                  control={form.control}
+                  name='AmountDiscount'
+                  render={({ field }) => (
+                    <FormItem className='gap-0 overflow-hidden rounded-xl border'>
+                      <div className='flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between'>
+                        <div className='space-y-1'>
                           <FormLabel>{t('Amount discount')}</FormLabel>
-                          <Button
-                            type='button'
-                            variant='outline'
-                            size='sm'
-                            onClick={() =>
-                              setAmountDiscountVisualMode(
-                                !amountDiscountVisualMode
-                              )
-                            }
-                            className='w-full sm:w-auto'
-                          >
-                            {amountDiscountVisualMode ? (
-                              <>
-                                <Code2 className='mr-2 h-3 w-3' />
-                                {t('JSON Editor')}
-                              </>
-                            ) : (
-                              <>
-                                <Eye className='mr-2 h-3 w-3' />
-                                {t('Visual Editor')}
-                              </>
-                            )}
-                          </Button>
+                          <FormDescription>
+                            {amountDiscountVisualMode
+                              ? t(
+                                  'Discount rate is the payable ratio: 0.9 means users pay 90% of the recharge amount.'
+                                )
+                              : t(
+                                  'Recharge amounts matching a tier are charged at the configured rate; credited quota is unchanged.'
+                                )}
+                          </FormDescription>
                         </div>
+                        <EditorModeToggle
+                          visualMode={amountDiscountVisualMode}
+                          onToggle={() =>
+                            setAmountDiscountVisualMode(
+                              !amountDiscountVisualMode
+                            )
+                          }
+                        />
+                      </div>
+                      <div className='space-y-3 p-4'>
                         <FormControl>
                           {amountDiscountVisualMode ? (
                             <AmountDiscountVisualEditor
@@ -1115,7 +765,7 @@ export function PaymentSettingsSection({
                               name={field.name}
                               onBlur={field.onBlur}
                               textareaRef={field.ref}
-                              placeholder='{"100":0.95,"200":0.9}'
+                              placeholder='{"100": 0.9}'
                               heightClassName='h-40 min-h-40 max-h-40'
                               aria-invalid={Boolean(
                                 form.formState.errors.AmountDiscount
@@ -1123,32 +773,33 @@ export function PaymentSettingsSection({
                             />
                           )}
                         </FormControl>
-                        <FormDescription>
-                          {t('Discount map by recharge amount (JSON object)')}
-                        </FormDescription>
                         <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                      </div>
+                    </FormItem>
+                  )}
+                />
               </div>
             </TabsContent>
 
-            <TabsContent value='epay' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Epay Gateway')}</h3>
+            <TabsContent value='wechat' className={paymentTabContentClassName}>
+              <div className='space-y-6'>
+                <div className='space-y-1'>
+                  <h3 className='text-base font-semibold'>
+                    {t('WeChat Pay Gateway')}
+                  </h3>
                   <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Epay payment integration')}
+                    {t(
+                      'Configuration for WeChat Pay official direct integration (APIv3, Native QR-code payment)'
+                    )}
                   </p>
                 </div>
 
                 <Alert>
                   <ShieldAlert className='h-4 w-4' />
-                  <AlertTitle>{t('Epay safety reminder')}</AlertTitle>
+                  <AlertTitle>{t('WeChat Pay safety reminder')}</AlertTitle>
                   <AlertDescription>
                     {t(
-                      'Epay is a payment protocol, not a specific official website. Verify the provider yourself and do not trust random third-party Epay deployments.'
+                      'Use your own WeChat Pay merchant account. The APIv3 key and merchant private key are sensitive credentials; never share them, and rotate them immediately if leaked.'
                     )}
                   </AlertDescription>
                 </Alert>
@@ -1156,36 +807,14 @@ export function PaymentSettingsSection({
                 <div className='grid gap-6 md:grid-cols-2'>
                   <FormField
                     control={form.control}
-                    name='PayAddress'
+                    name='WechatAppId'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Epay endpoint')}</FormLabel>
+                        <FormLabel>{t('WeChat Pay App ID')}</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder={t('https://pay.example.com')}
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Base address provided by your Epay service')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='CustomCallbackAddress'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Callback address')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t('https://gateway.example.com')}
+                            placeholder='wx1234567890abcdef'
+                            autoComplete='off'
                             {...field}
                             onChange={(event) =>
                               field.onChange(event.target.value)
@@ -1194,25 +823,23 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Only enter the site origin, for example https://api.example.com. Do not include any path such as /api/user/epay/notify. Leave blank to use the server address.'
+                            'App ID bound to your WeChat Pay merchant account (or the service provider APPID)'
                           )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <div className='grid gap-6 md:grid-cols-2'>
                   <FormField
                     control={form.control}
-                    name='EpayId'
+                    name='WechatMchId'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Epay merchant ID')}</FormLabel>
+                        <FormLabel>{t('WeChat Pay merchant ID')}</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder='10001'
+                            placeholder='1600000000'
                             autoComplete='off'
                             {...field}
                             onChange={(event) =>
@@ -1220,6 +847,9 @@ export function PaymentSettingsSection({
                             }
                           />
                         </FormControl>
+                        <FormDescription>
+                          {t('Merchant ID (MchID) of your WeChat Pay account')}
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1227,10 +857,38 @@ export function PaymentSettingsSection({
 
                   <FormField
                     control={form.control}
-                    name='EpayKey'
+                    name='WechatMchSerialNo'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Epay secret key')}</FormLabel>
+                        <FormLabel>
+                          {t('Merchant API certificate serial number')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={t('e.g., 3F1A2B...')}
+                            autoComplete='off'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Serial number of the merchant API certificate used for request signing'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='WechatApiV3Key'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('APIv3 key')}</FormLabel>
                         <FormControl>
                           <Input
                             type='password'
@@ -1243,278 +901,8 @@ export function PaymentSettingsSection({
                           />
                         </FormControl>
                         <FormDescription>
-                          {t('Leave blank unless rotating the secret')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value='stripe' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Stripe Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Stripe payment integration')}
-                  </p>
-                </div>
-
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Webhook Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Webhook URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/stripe/webhook'}
-                      </code>
-                    </li>
-                    <li>
-                      {t('Required events:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {t('checkout.session.completed')}
-                      </code>{' '}
-                      {t('and')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {t('checkout.session.expired')}
-                      </code>
-                    </li>
-                    <li>
-                      {t('Configure at:')}{' '}
-                      <a
-                        href='https://dashboard.stripe.com/developers'
-                        target='_blank'
-                        rel='noreferrer'
-                        className='underline hover:no-underline'
-                      >
-                        {t('Stripe Dashboard')}
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='StripeApiSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('API secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('sk_xxx or rk_xxx')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Stripe API key (leave blank unless updating)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripeWebhookSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Webhook secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('whsec_xxx')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
                           {t(
-                            'Webhook signing secret (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripePriceId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Price ID')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t('price_xxx')}
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Stripe product price ID')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='StripeUnitPrice'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Unit price (local currency / USD)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('e.g., 8 means 8 local currency per USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripeMinTopUp'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Minimum recharge amount in USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='StripePromotionCodesEnabled'
-                    render={({ field }) => (
-                      <SettingsSwitchItem>
-                        <SettingsSwitchContent>
-                          <FormLabel>{t('Promotion codes')}</FormLabel>
-                          <FormDescription>
-                            {t('Allow users to enter promo codes')}
-                          </FormDescription>
-                        </SettingsSwitchContent>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </SettingsSwitchItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value='creem' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Creem Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Creem payment integration')}
-                  </p>
-                </div>
-
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Webhook Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Webhook URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/creem/webhook'}
-                      </code>
-                    </li>
-                    <li>{t('Configure in your Creem dashboard')}</li>
-                  </ul>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='CreemApiKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('API Key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter Creem API key')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Creem API key (leave blank unless updating)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='CreemWebhookSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Webhook Secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter webhook secret')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Webhook signing secret (leave blank unless updating)'
+                            'APIv3 key set in the merchant platform; also used to decrypt payment callbacks. Leave blank unless rotating.'
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -1525,106 +913,276 @@ export function PaymentSettingsSection({
 
                 <FormField
                   control={form.control}
-                  name='CreemTestMode'
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>{t('Test Mode')}</FormLabel>
-                        <FormDescription>
-                          {t('Enable test mode for Creem payments')}
-                        </FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='CreemProducts'
+                  name='WechatMchPrivateKey'
                   render={({ field }) => (
                     <FormItem>
-                      <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                        <FormLabel>{t('Products')}</FormLabel>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() =>
-                            setCreemProductsVisualMode(!creemProductsVisualMode)
-                          }
-                          className='w-full sm:w-auto'
-                        >
-                          {creemProductsVisualMode ? (
-                            <>
-                              <Code2 className='mr-2 h-3 w-3' />
-                              {t('JSON Editor')}
-                            </>
-                          ) : (
-                            <>
-                              <Eye className='mr-2 h-3 w-3' />
-                              {t('Visual Editor')}
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                      <FormLabel>
+                        {t('Merchant API certificate private key')}
+                      </FormLabel>
                       <FormControl>
-                        {creemProductsVisualMode ? (
-                          <CreemProductsVisualEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                          />
-                        ) : (
-                          <JsonCodeEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                            name={field.name}
-                            onBlur={field.onBlur}
-                            textareaRef={field.ref}
-                            placeholder='[{"name":"Basic","productId":"prod_xxx","price":10,"quota":500000,"currency":"USD"}]'
-                            heightClassName='h-40 min-h-40 max-h-40'
-                            aria-invalid={Boolean(
-                              form.formState.errors.CreemProducts
-                            )}
-                          />
-                        )}
+                        <Input
+                          type='password'
+                          placeholder={t('Enter new key to update')}
+                          autoComplete='new-password'
+                          {...field}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                        />
                       </FormControl>
                       <FormDescription>
-                        {t('Configure Creem products. Provide a JSON array.')}
+                        {t(
+                          'Contents of apiclient_key.pem downloaded with your merchant API certificate. Leave blank unless rotating.'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='WechatMinTopUp'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Minimum top-up (CNY) for WeChat Pay')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='1'
+                            min={0}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='WechatOrderExpireMinutes'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Order validity (minutes)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='1'
+                            min={1}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'How long the QR code stays payable; unpaid orders are closed after this'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Alert>
+                  <Info className='h-4 w-4' />
+                  <AlertTitle>{t('Payment notify URL')}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'Set the payment notify URL in the WeChat Pay merchant platform to: your callback address (General settings) or server address, plus /api/user/wechat/notify'
+                    )}
+                  </AlertDescription>
+                </Alert>
               </div>
             </TabsContent>
 
-            <TabsContent
-              value='waffo-pancake'
-              className={paymentTabContentClassName}
-            >
-              <WaffoPancakeSettingsSection
-                defaultValues={waffoPancakeDefaultValues}
-                values={waffoPancakeValues}
-                onValueChange={setWaffoPancakeValue}
-                selectedBinding={waffoPancakeSelection}
-                savedBinding={waffoPancakeSavedBinding}
-                onSelectedBindingChange={setWaffoPancakeSelection}
-              />
-            </TabsContent>
+            <TabsContent value='alipay' className={paymentTabContentClassName}>
+              <div className='space-y-6'>
+                <div className='space-y-1'>
+                  <h3 className='text-base font-semibold'>
+                    {t('Alipay Gateway')}
+                  </h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t(
+                      'Configuration for Alipay Website Payment (RSA2). Requires the Website Payment product; customers scan the QR code at the Alipay cashier.'
+                    )}
+                  </p>
+                </div>
 
-            <TabsContent value='waffo' className={paymentTabContentClassName}>
-              <WaffoSettingsSection
-                values={waffoValues}
-                onValueChange={setWaffoValue}
-                payMethods={waffoPayMethods}
-                onPayMethodsChange={setWaffoPayMethods}
-              />
+                <Alert>
+                  <ShieldAlert className='h-4 w-4' />
+                  <AlertTitle>{t('Alipay safety reminder')}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'Use your own Alipay application. The application private key and Alipay public key are sensitive credentials; never share them, and rotate them immediately if leaked.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='AlipayAppId'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Alipay App ID')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder='2021000123456789'
+                            autoComplete='off'
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('APPID of your Alipay open platform application')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='AlipaySandbox'
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className='flex items-center justify-between gap-4'>
+                          <div>
+                            <FormLabel>{t('Sandbox mode')}</FormLabel>
+                            <FormDescription>
+                              {t(
+                                'Route requests to the Alipay sandbox gateway for testing'
+                              )}
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='AlipayMinTopUp'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Minimum top-up (CNY) for Alipay')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='1'
+                            min={0}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='AlipayOrderExpireMinutes'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Order validity (minutes)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='1'
+                            min={1}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'How long the QR code stays payable; unpaid orders are closed after this'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name='AlipayPrivateKey'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Application private key')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='password'
+                          placeholder={t('Enter new key to update')}
+                          autoComplete='new-password'
+                          {...field}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'RSA2 private key generated for your application (without the BEGIN/END lines is also accepted). Leave blank unless rotating.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='AlipayPublicKey'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Alipay public key')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='password'
+                          placeholder={t('Enter new key to update')}
+                          autoComplete='new-password'
+                          {...field}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Alipay public key (not the application public key) from the open platform, used to verify callbacks. Leave blank unless rotating.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Alert>
+                  <Info className='h-4 w-4' />
+                  <AlertTitle>{t('Payment notify URL')}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'The server sends the notify URL with every order: your callback address (General settings) or server address, plus /api/user/alipay/notify. This public URL must accept Alipay POST requests without login so paid orders can be credited automatically.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              </div>
             </TabsContent>
           </Tabs>
         </SettingsForm>

@@ -69,8 +69,8 @@ import {
   hasPermission,
   normalizeAdminPermissions,
 } from '@/lib/admin-permissions'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
-import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
+import { getCurrencyLabel } from '@/lib/currency'
+import { formatQuota, parseQuotaFromYuan } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -147,9 +147,7 @@ export function UsersMutateDrawer({
     }
   }, [open, isUpdate, currentRow, form])
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
 
   const currentQuotaRaw = form.watch('quota_dollars') || 0
   const selectedRole = form.watch('role')
@@ -402,11 +400,7 @@ export function UsersMutateDrawer({
                         <div className='flex gap-2'>
                           <FormControl>
                             <Input
-                              value={
-                                tokensOnly
-                                  ? String(field.value || 0)
-                                  : (field.value || 0).toFixed(6)
-                              }
+                              value={(field.value || 0).toFixed(6)}
                               readOnly
                               className='flex-1'
                             />
@@ -421,7 +415,7 @@ export function UsersMutateDrawer({
                           </Button>
                         </div>
                         <FormDescription>
-                          {formatQuota(parseQuotaFromDollars(field.value || 0))}
+                          {formatQuota(parseQuotaFromYuan(field.value || 0))}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -590,7 +584,7 @@ export function UsersMutateDrawer({
           open={quotaDialogOpen}
           onOpenChange={setQuotaDialogOpen}
           userId={currentRow.id}
-          currentQuota={parseQuotaFromDollars(currentQuotaRaw || 0)}
+          currentQuota={parseQuotaFromYuan(currentQuotaRaw || 0)}
           onSuccess={refreshUserData}
         />
       )}

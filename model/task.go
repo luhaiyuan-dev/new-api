@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	relaykitttypes "github.com/QuantumNous/new-api/relaykit/types"
 )
 
 type TaskStatus string
@@ -120,6 +121,10 @@ type TaskBillingContext struct {
 	OtherRatios     map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
 	OriginModelName string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	BillingMode     string             `json:"billing_mode,omitempty"`      // ratio / tiered_expr，用于结算阶段分流
+	BillingUnit     string             `json:"billing_unit,omitempty"`      // 媒体计费单位：per_image / per_second / per_call
+	// MediaBilling 冻结提交时的媒体单位价与维度，轮询阶段按实际用量重算，不读取最新配置。
+	MediaBilling *relaykitttypes.ResolvedMediaPrice `json:"media_billing,omitempty"`
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）

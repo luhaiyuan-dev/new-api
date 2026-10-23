@@ -28,37 +28,27 @@ export const DEFAULT_PRESET_MULTIPLIERS = [1, 5, 10, 30, 50, 100, 300, 500]
 
 /**
  * Payment method types
+ *
+ * 站点只支持微信支付与支付宝两条直连渠道，二者都是「下单 → 二维码 → 回调入账」
+ * 的扫码支付链路。
  */
 export const PAYMENT_TYPES = {
-  ALIPAY: 'alipay',
-  WECHAT: 'wxpay',
-  STRIPE: 'stripe',
-  CREEM: 'creem',
-  WAFFO: 'waffo',
-  WAFFO_PANCAKE: 'waffo_pancake',
+  WECHAT_PAY: 'wechat',
+  ALIPAY_PAY: 'alipay',
 } as const
 
 /**
  * Default payment type
  */
-export const DEFAULT_PAYMENT_TYPE = PAYMENT_TYPES.ALIPAY
+export const DEFAULT_PAYMENT_TYPE = PAYMENT_TYPES.ALIPAY_PAY
 
 /**
  * Payment icon colors (HEX format for react-icons)
  */
 export const PAYMENT_ICON_COLORS = {
-  [PAYMENT_TYPES.ALIPAY]: '#1677FF',
-  [PAYMENT_TYPES.WECHAT]: '#07C160',
-  [PAYMENT_TYPES.STRIPE]: '#635BFF',
-  [PAYMENT_TYPES.CREEM]: '#6366F1',
-  [PAYMENT_TYPES.WAFFO]: '#2563EB',
-  [PAYMENT_TYPES.WAFFO_PANCAKE]: '#F97316',
+  [PAYMENT_TYPES.WECHAT_PAY]: '#07C160',
+  [PAYMENT_TYPES.ALIPAY_PAY]: '#1677FF',
 } as const
-
-/**
- * Default discount rate (no discount)
- */
-export const DEFAULT_DISCOUNT_RATE = 1.0
 
 /**
  * Default minimum topup amount

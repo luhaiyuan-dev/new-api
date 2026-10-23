@@ -113,9 +113,36 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)
 	appendBillingInfo(relayInfo, other)
+	appendMediaBillingInfo(relayInfo, other)
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	return other
+}
+
+func appendMediaBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil || relayInfo.PriceData.MediaBilling == nil {
+		return
+	}
+	media := relayInfo.PriceData.MediaBilling
+	other["billing_unit"] = media.Unit
+	other["media_kind"] = media.Kind
+	other["media_unit_price"] = media.UnitPrice
+	other["media_quantity"] = media.Quantity
+	if media.ResolutionTier != "" {
+		other["resolution_tier"] = media.ResolutionTier
+	}
+	if media.QualityTier != "" {
+		other["quality_tier"] = media.QualityTier
+	}
+	if media.ResolutionMultiplier > 0 && media.ResolutionMultiplier != 1 {
+		other["resolution_multiplier"] = media.ResolutionMultiplier
+	}
+	if len(media.ExtraRatios) > 0 {
+		other["media_extra_ratios"] = media.ExtraRatios
+	}
+	if media.TierFallback {
+		other["tier_fallback"] = true
+	}
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

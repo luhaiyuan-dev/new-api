@@ -19,7 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 import * as z from 'zod'
 
 import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
+import { formatBillingCNY } from '@/lib/currency'
 
+import {
+  formatRatioProduct,
+  resolveMediaPreview,
+  summarizeMediaSpec,
+} from './media-pricing/media-pricing-spec'
+import {
+  MEDIA_UNIT_LABEL_KEYS,
+  type MediaModelSpec,
+  type MediaUnit,
+} from './media-pricing/media-pricing-types'
 import { formatPricingNumber } from './pricing-format'
 
 export const createModelPricingSchema = (t: (key: string) => string) =>
@@ -62,6 +73,8 @@ export type ModelRatioData = {
   billingMode?: PricingMode
   billingExpr?: string
   requestRuleExpr?: string
+  /** Media price table entry for this model; null removes the entry. */
+  media?: MediaModelSpec | null
 }
 
 export type PreviewRow = {
@@ -244,14 +257,14 @@ export function buildPreviewRows(
     {
       key: 'inputPrice',
       label: t('Input price'),
-      value: promptPrice ? `$${promptPrice}` : t('Empty'),
+      value: promptPrice ? `¥${promptPrice}` : t('Empty'),
     },
     {
       key: 'completion',
       label: t('Completion price'),
       value:
         laneEnabled.completion && lanePrices.completion
-          ? `$${lanePrices.completion}`
+          ? `¥${lanePrices.completion}`
           : t('Empty'),
     },
     {
@@ -259,7 +272,7 @@ export function buildPreviewRows(
       label: t('Cache read price'),
       value:
         laneEnabled.cache && lanePrices.cache
-          ? `$${lanePrices.cache}`
+          ? `¥${lanePrices.cache}`
           : t('Empty'),
     },
     {
@@ -267,7 +280,7 @@ export function buildPreviewRows(
       label: t('Cache write price'),
       value:
         laneEnabled.createCache && lanePrices.createCache
-          ? `$${lanePrices.createCache}`
+          ? `¥${lanePrices.createCache}`
           : t('Empty'),
     },
     {
@@ -275,7 +288,7 @@ export function buildPreviewRows(
       label: t('Image input price'),
       value:
         laneEnabled.image && lanePrices.image
-          ? `$${lanePrices.image}`
+          ? `¥${lanePrices.image}`
           : t('Empty'),
     },
     {
@@ -283,7 +296,7 @@ export function buildPreviewRows(
       label: t('Audio input price'),
       value:
         laneEnabled.audioInput && lanePrices.audioInput
-          ? `$${lanePrices.audioInput}`
+          ? `¥${lanePrices.audioInput}`
           : t('Empty'),
     },
     {
@@ -291,8 +304,83 @@ export function buildPreviewRows(
       label: t('Audio output price'),
       value:
         laneEnabled.audioOutput && lanePrices.audioOutput
-          ? `$${lanePrices.audioOutput}`
+          ? `¥${lanePrices.audioOutput}`
           : t('Empty'),
     },
   ]
+}
+
+const MEDIA_UNIT_SUFFIX_KEYS: Record<MediaUnit, string> = {
+  per_image: '/ image',
+  per_second: '/ second',
+  per_call: '/ call',
+  per_1m_tokens: '/ 1M tokens',
+}
+
+/**
+ * Preview rows for image/video/audio media pricing. Token-priced media specs
+ * only declare the model kind, so they return no rows.
+ */
+export function buildMediaPreviewRows(
+  spec: MediaModelSpec,
+  t: (key: string) => string
+): PreviewRow[] {
+  const summary = summarizeMediaSpec(spec)
+  const unit = summary.unit
+  if (!unit || unit === 'per_1m_tokens') return []
+
+  if (summary.price === null) {
+    return [
+      {
+        key: 'mediaPrice',
+        label: t('Media pricing'),
+        value: t('No price configured'),
+      },
+    ]
+  }
+
+  const cheapest = formatBillingCNY(summary.price)
+  const dearest =
+    summary.priceMax !== null && summary.priceMax > summary.price
+      ? formatBillingCNY(summary.priceMax)
+      : ''
+  const rows: PreviewRow[] = [
+    {
+      key: 'mediaUnit',
+      label: t('Billing unit'),
+      value: `${t(MEDIA_UNIT_LABEL_KEYS[unit])} (${t(
+        MEDIA_UNIT_SUFFIX_KEYS[unit]
+      )})`,
+    },
+    {
+      key: 'mediaPrice',
+      label: t('Unit price'),
+      value: dearest ? `${cheapest} – ${dearest}` : cheapest,
+    },
+  ]
+
+  const example = resolveMediaPreview(spec, {
+    resolutionTier: spec.default_resolution_tier ?? summary.resolutionTiers[0],
+    qualityTier: spec.default_quality_tier ?? summary.qualityTiers[0],
+    durationSec: spec.duration?.default,
+  })
+  if (!example.issue) {
+    rows.push({
+      key: 'mediaExample',
+      label: t('Example total'),
+      value: `${formatBillingCNY(example.total)} · ${formatRatioProduct(example)}`,
+      multiline: true,
+    })
+  }
+
+  if (summary.resolutionTiers.length > 0) {
+    rows.push({
+      key: 'mediaTiers',
+      label: t('Resolution'),
+      value: summary.resolutionTiers.join(' · '),
+      multiline: true,
+    })
+  }
+
+  return rows
 }

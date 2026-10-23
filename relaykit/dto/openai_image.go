@@ -14,6 +14,10 @@ import (
 // wrapped-negative n overflows quota calculation into a negative charge.
 const MaxImageN = 128
 
+// MaxImageSide caps a requested image's width and height. Side length feeds the
+// resolution tier lookup, so absurd dimensions must be rejected before pricing.
+const MaxImageSide = 8192
+
 type ImageRequest struct {
 	Model             string          `json:"model"`
 	Prompt            string          `json:"prompt" binding:"required"`
@@ -162,11 +166,21 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	// Keep n separate from ImagePriceRatio so size/quality and count remain
 	// independent billing dimensions. Fixed-price pre-consume stores this on
 	// PriceData, and image settlement reuses or replaces the same "n" ratio.
+	//
+	// ImagePriceRatio is the legacy dall-e multiplier table. It is kept as a
+	// fallback until the model has a media_billing_setting entry; new models are
+	// priced from the configured resolution × quality table instead.
 	return &types.TokenCountMeta{
 		CombineText:     i.Prompt,
 		MaxTokens:       1584,
 		ImagePriceRatio: sizeRatio * qualityRatio,
 		BillingRatios:   map[string]float64{"n": float64(imageN)},
+		MediaBilling: &types.MediaBillingMeta{
+			Kind:    types.MediaKindImage,
+			Count:   int(imageN),
+			Size:    i.Size,
+			Quality: i.Quality,
+		},
 	}
 }
 

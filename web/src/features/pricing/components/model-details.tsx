@@ -67,6 +67,7 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import { getMediaPricePreview } from '../lib/media-price'
 import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
@@ -568,10 +569,7 @@ function ModelHeader(props: { model: PricingModel }) {
 
 function PriceSection(props: {
   model: PricingModel
-  priceRate: number
-  usdExchangeRate: number
   tokenUnit: TokenUnit
-  showRechargePrice: boolean
 }) {
   const { t } = useTranslation()
   const isTokenBased = isTokenBasedModel(props.model)
@@ -580,9 +578,6 @@ function PriceSection(props: {
   const baseGroupRatioMap = { [baseGroupKey]: 1 }
   const dynamicSummary = getDynamicPricingSummary(props.model, {
     tokenUnit: props.tokenUnit,
-    showRechargePrice: props.showRechargePrice,
-    priceRate: props.priceRate,
-    usdExchangeRate: props.usdExchangeRate,
     groupRatioMultiplier: 1,
   })
 
@@ -702,6 +697,65 @@ function PriceSection(props: {
     )
   }
 
+  const mediaPrice = getMediaPricePreview(props.model)
+  if (mediaPrice || props.model.media_summary) {
+    return (
+      <section>
+        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <div className='bg-muted/20 rounded-lg border p-3'>
+          <div className='flex items-baseline gap-2'>
+            <span className='text-foreground font-mono text-base font-semibold tabular-nums'>
+              {mediaPrice ? mediaPrice.unitPrice : props.model.media_summary}
+            </span>
+            {mediaPrice && (
+              <span className='text-muted-foreground text-xs'>
+                {t(mediaPrice.unitLabelKey)}
+              </span>
+            )}
+          </div>
+          <p className='text-muted-foreground mt-1 text-xs'>
+            {t('Media pricing')}
+          </p>
+          {mediaPrice && (
+            <div className='mt-2 space-y-1 text-xs'>
+              {mediaPrice.resolutionTiers.length > 0 && (
+                <div className='flex items-baseline justify-between gap-4'>
+                  <span className='text-muted-foreground/70'>
+                    {t('Resolution')}
+                  </span>
+                  <span className='font-mono'>
+                    {mediaPrice.resolutionTiers.join(' · ')}
+                  </span>
+                </div>
+              )}
+              {mediaPrice.qualityTiers.length > 0 && (
+                <div className='flex items-baseline justify-between gap-4'>
+                  <span className='text-muted-foreground/70'>
+                    {t('Quality')}
+                  </span>
+                  <span className='font-mono'>
+                    {mediaPrice.qualityTiers.join(' · ')}
+                  </span>
+                </div>
+              )}
+              {mediaPrice.defaultDuration !== undefined &&
+                mediaPrice.defaultDuration > 0 && (
+                  <div className='flex items-baseline justify-between gap-4'>
+                    <span className='text-muted-foreground/70'>
+                      {t('Duration (seconds)')}
+                    </span>
+                    <span className='font-mono'>
+                      {mediaPrice.defaultDuration}
+                    </span>
+                  </div>
+                )}
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+
   if (!isTokenBased) {
     return (
       <section>
@@ -714,9 +768,6 @@ function PriceSection(props: {
             {formatFixedPrice(
               props.model,
               baseGroupKey,
-              props.showRechargePrice,
-              props.priceRate,
-              props.usdExchangeRate,
               baseGroupRatioMap
             )}
           </span>
@@ -733,9 +784,6 @@ function PriceSection(props: {
         baseGroupKey,
         type,
         props.tokenUnit,
-        props.showRechargePrice,
-        props.priceRate,
-        props.usdExchangeRate,
         baseGroupRatioMap
       )}
       <span className='text-muted-foreground/40 ml-1 text-xs font-normal'>
@@ -854,13 +902,9 @@ function GroupPricingSection(props: {
   groupRatio: Record<string, number>
   usableGroup: Record<string, { desc: string; ratio: number }>
   autoGroups: string[]
-  priceRate: number
-  usdExchangeRate: number
   tokenUnit: TokenUnit
-  showRechargePrice?: boolean
 }) {
   const { t } = useTranslation()
-  const showRechargePrice = props.showRechargePrice ?? false
 
   const availableGroups = useMemo(
     () => getAvailableGroups(props.model, props.usableGroup || {}),
@@ -942,9 +986,6 @@ function GroupPricingSection(props: {
 
     const priceFields = getDynamicPriceFields(dynamicTiers, {
       tokenUnit: props.tokenUnit,
-      showRechargePrice,
-      priceRate: props.priceRate,
-      usdExchangeRate: props.usdExchangeRate,
       groupRatioMultiplier: 1,
     })
     const formattedPricesByGroup = new Map(
@@ -954,9 +995,6 @@ function GroupPricingSection(props: {
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
             tokenUnit: props.tokenUnit,
-            showRechargePrice,
-            priceRate: props.priceRate,
-            usdExchangeRate: props.usdExchangeRate,
             groupRatioMultiplier: ratio,
           }),
         ] as const
@@ -1027,18 +1065,12 @@ function GroupPricingSection(props: {
       group,
       type,
       props.tokenUnit,
-      showRechargePrice,
-      props.priceRate,
-      props.usdExchangeRate,
       props.groupRatio
     )
   const renderFixedGroupPrice = (group: string) =>
     formatFixedPrice(
       props.model,
       group,
-      showRechargePrice,
-      props.priceRate,
-      props.usdExchangeRate,
       props.groupRatio
     )
 
@@ -1131,15 +1163,11 @@ export interface ModelDetailsContentProps {
   usableGroup: Record<string, { desc: string; ratio: number }>
   endpointMap: Record<string, { path?: string; method?: string }>
   autoGroups: string[]
-  priceRate: number
-  usdExchangeRate: number
   tokenUnit: TokenUnit
-  showRechargePrice?: boolean
-}
+  }
 
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
-  const showRechargePrice = props.showRechargePrice ?? false
 
   const isDynamic =
     props.model.billing_mode === 'tiered_expr' &&
@@ -1171,13 +1199,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 
           <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
-            <PriceSection
-              model={props.model}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
-              tokenUnit={props.tokenUnit}
-              showRechargePrice={showRechargePrice}
-            />
+            <PriceSection model={props.model} tokenUnit={props.tokenUnit} />
             {isDynamic && (
               <DynamicPricingBreakdown billingExpr={props.model.billing_expr} />
             )}
@@ -1186,10 +1208,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
               groupRatio={props.groupRatio}
               usableGroup={props.usableGroup}
               autoGroups={props.autoGroups}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
               tokenUnit={props.tokenUnit}
-              showRechargePrice={showRechargePrice}
             />
           </section>
 
@@ -1257,8 +1276,6 @@ export function ModelDetails() {
     endpointMap,
     autoGroups,
     isLoading,
-    priceRate,
-    usdExchangeRate,
   } = usePricingData()
 
   const tokenUnit: TokenUnit =
@@ -1334,10 +1351,7 @@ export function ModelDetails() {
           groupRatio={groupRatio || {}}
           usableGroup={usableGroup || {}}
           autoGroups={autoGroups || []}
-          priceRate={priceRate ?? 1}
-          usdExchangeRate={usdExchangeRate ?? 1}
           tokenUnit={tokenUnit}
-          showRechargePrice={search.rechargePrice ?? false}
           endpointMap={
             (endpointMap as Record<
               string,

@@ -19,6 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
 
 import { safeJsonParse } from '../utils/json-parser'
+import {
+  describeMediaPrice,
+  hasActiveMediaPricing,
+} from './media-pricing/media-pricing-format'
+import { parseMediaModels } from './media-pricing/media-pricing-spec'
+import type { MediaModelSpec } from './media-pricing/media-pricing-types'
 import { formatPricingNumber } from './pricing-format'
 
 export type ModelPricingSnapshotInput = {
@@ -32,6 +38,7 @@ export type ModelPricingSnapshotInput = {
   audioCompletionRatio: string
   billingMode: string
   billingExpr: string
+  mediaModels: string
 }
 
 export type ModelPricingSnapshot = {
@@ -47,6 +54,7 @@ export type ModelPricingSnapshot = {
   billingMode?: string
   billingExpr?: string
   requestRuleExpr?: string
+  media?: MediaModelSpec
   hasConflict: boolean
 }
 
@@ -65,7 +73,8 @@ export const isBasePricingUnset = (snapshot?: ModelPricingSnapshot) =>
   !snapshot ||
   (snapshot.billingMode !== 'tiered_expr' &&
     !hasPricingValue(snapshot.price) &&
-    !hasPricingValue(snapshot.ratio))
+    !hasPricingValue(snapshot.ratio) &&
+    !hasActiveMediaPricing(snapshot.media))
 
 const toNumberOrNull = (value?: string) => {
   if (!hasPricingValue(value)) return null
@@ -80,7 +89,13 @@ const ratioToPrice = (ratio?: string, denominator?: string) => {
   return formatPricingNumber(ratioNumber * denominatorNumber)
 }
 
-export const getModeLabel = (mode?: string) => {
+export const getModeLabel = (mode?: string, mediaUnit?: string) => {
+  if (mode === 'media') {
+    if (mediaUnit === 'per_image') return 'Per image'
+    if (mediaUnit === 'per_second') return 'Per second'
+    if (mediaUnit === 'per_call') return 'Per call'
+    return 'Media pricing'
+  }
   if (mode === 'per-request') return 'Per-request'
   if (mode === 'tiered_expr') return 'Expression'
   return 'Per-token'
@@ -89,7 +104,7 @@ export const getModeLabel = (mode?: string) => {
 export const getModeVariant = (
   mode?: string
 ): 'warning' | 'info' | 'success' => {
-  if (mode === 'per-request') return 'warning'
+  if (mode === 'per-request' || mode === 'media') return 'warning'
   if (mode === 'tiered_expr') return 'info'
   return 'success'
 }
@@ -113,11 +128,15 @@ export const getPriceSummary = (
     return getExpressionSummary(row, t)
   }
   if (row.billingMode === 'per-request') {
-    return row.price ? `$${row.price} / ${t('request')}` : t('Unset price')
+    return row.price ? `¥${row.price} / ${t('request')}` : t('Unset price')
   }
 
   const inputPrice = ratioToPrice(row.ratio)
-  if (!inputPrice) return t('Unset price')
+  if (!inputPrice) {
+    const media = describeMediaPrice(row.media, t)
+    if (media && media.price !== '-') return media.price
+    return t('Unset price')
+  }
 
   const extraCount = [
     row.completionRatio,
@@ -129,8 +148,8 @@ export const getPriceSummary = (
   ].filter(hasPricingValue).length
 
   return extraCount > 0
-    ? `${t('Input')} $${inputPrice} · ${extraCount} ${t('extras')}`
-    : `${t('Input')} $${inputPrice}`
+    ? `${t('Input')} ¥${inputPrice} · ${extraCount} ${t('extras')}`
+    : `${t('Input')} ¥${inputPrice}`
 }
 
 export const getPriceDetail = (
@@ -147,15 +166,18 @@ export const getPriceDetail = (
   }
 
   const inputPrice = ratioToPrice(row.ratio)
-  if (!inputPrice) return t('No base input price')
+  if (!inputPrice) {
+    if (describeMediaPrice(row.media, t)) return t('Media pricing')
+    return t('No base input price')
+  }
 
   const details = [
     row.completionRatio &&
-      `${t('Output')} $${ratioToPrice(row.completionRatio, inputPrice)}`,
+      `${t('Output')} ¥${ratioToPrice(row.completionRatio, inputPrice)}`,
     row.cacheRatio &&
-      `${t('Cache')} $${ratioToPrice(row.cacheRatio, inputPrice)}`,
+      `${t('Cache')} ¥${ratioToPrice(row.cacheRatio, inputPrice)}`,
     row.createCacheRatio &&
-      `${t('Cache write')} $${ratioToPrice(row.createCacheRatio, inputPrice)}`,
+      `${t('Cache write')} ¥${ratioToPrice(row.createCacheRatio, inputPrice)}`,
   ]
     .filter(Boolean)
     .slice(0, 2)
@@ -174,6 +196,7 @@ export const buildModelSnapshots = ({
   audioCompletionRatio,
   billingMode,
   billingExpr,
+  mediaModels,
 }: ModelPricingSnapshotInput): ModelPricingSnapshot[] => {
   const priceMap = safeJsonParse<Record<string, number>>(modelPrice, {
     fallback: {},
@@ -215,6 +238,7 @@ export const buildModelSnapshots = ({
     fallback: {},
     context: 'billing expression',
   })
+  const mediaMap = parseMediaModels(mediaModels).models
 
   const modelNames = new Set([
     ...Object.keys(priceMap),
@@ -227,6 +251,7 @@ export const buildModelSnapshots = ({
     ...Object.keys(audioCompletionMap),
     ...Object.keys(billingModeMap),
     ...Object.keys(billingExprMap),
+    ...Object.keys(mediaMap),
   ])
 
   return Array.from(modelNames).map((name) => {
@@ -240,6 +265,7 @@ export const buildModelSnapshots = ({
     const audioCompletion = audioCompletionMap[name]?.toString() || ''
 
     const modeForModel = billingModeMap[name]
+    const media = mediaMap[name]
     if (modeForModel === 'tiered_expr') {
       const fullExpr = billingExprMap[name] || ''
       const { billingExpr: pureExpr, requestRuleExpr } =
@@ -257,8 +283,15 @@ export const buildModelSnapshots = ({
         imageRatio: image,
         audioRatio: audio,
         audioCompletionRatio: audioCompletion,
+        media,
         hasConflict: false,
       }
+    }
+
+    let billingMode = 'per-token'
+    if (price !== '') billingMode = 'per-request'
+    else if (ratio === '' && hasActiveMediaPricing(media)) {
+      billingMode = 'media'
     }
 
     return {
@@ -271,7 +304,8 @@ export const buildModelSnapshots = ({
       imageRatio: image,
       audioRatio: audio,
       audioCompletionRatio: audioCompletion,
-      billingMode: price !== '' ? 'per-request' : 'per-token',
+      media,
+      billingMode,
       hasConflict:
         price !== '' &&
         (ratio !== '' ||
@@ -299,5 +333,6 @@ export const getSnapshotSignature = (snapshot?: ModelPricingSnapshot) => {
     billingMode: snapshot.billingMode || 'per-token',
     billingExpr: snapshot.billingExpr || '',
     requestRuleExpr: snapshot.requestRuleExpr || '',
+    media: snapshot.media ? JSON.stringify(snapshot.media) : '',
   })
 }

@@ -145,13 +145,33 @@ func validatePrompt(prompt string) *dto.TaskError {
 // overflow quota calculation into a negative charge.
 const MaxTaskDurationSeconds = 3600
 
-func validateTaskDurationBounds(req TaskSubmitReq) *dto.TaskError {
+// MaxTaskFPS caps metadata.fps. Frame rate is recorded for auditing only and is
+// not a billing multiplier, but unbounded values must not reach adaptors.
+const MaxTaskFPS = 120
+
+func validateTaskBounds(req TaskSubmitReq) *dto.TaskError {
 	seconds := req.Duration
 	if seconds == 0 && req.Seconds != "" {
 		seconds, _ = strconv.Atoi(req.Seconds)
 	}
 	if seconds < 0 || seconds > MaxTaskDurationSeconds {
 		return createTaskError(fmt.Errorf("seconds must be between 1 and %d", MaxTaskDurationSeconds), "invalid_seconds", http.StatusBadRequest, true)
+	}
+	if rawFPS, exists := req.Metadata["fps"]; exists {
+		fps, parsed := 0.0, false
+		switch value := rawFPS.(type) {
+		case float64:
+			fps, parsed = value, true
+		case int:
+			fps, parsed = float64(value), true
+		case string:
+			if parsedFPS, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+				fps, parsed = parsedFPS, true
+			}
+		}
+		if !parsed || fps <= 0 || fps > MaxTaskFPS {
+			return createTaskError(fmt.Errorf("metadata.fps must be between 1 and %d", MaxTaskFPS), "invalid_fps", http.StatusBadRequest, true)
+		}
 	}
 	return nil
 }
@@ -234,7 +254,7 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 		return taskErr
 	}
 
-	if taskErr := validateTaskDurationBounds(req); taskErr != nil {
+	if taskErr := validateTaskBounds(req); taskErr != nil {
 		return taskErr
 	}
 
@@ -299,7 +319,7 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return taskErr
 	}
 
-	if taskErr := validateTaskDurationBounds(req); taskErr != nil {
+	if taskErr := validateTaskBounds(req); taskErr != nil {
 		return taskErr
 	}
 

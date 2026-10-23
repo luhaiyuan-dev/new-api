@@ -82,3 +82,11 @@ type TaskAdaptor interface {
 type OpenAIVideoConverter interface {
 	ConvertToOpenAIVideo(originTask *model.Task) ([]byte, error)
 }
+
+// MediaBillingEstimator is an optional TaskAdaptor extension. Adaptors that can
+// describe resolution / audio / video-input dimensions implement it so media
+// price tables and media expressions can price a task before submit. Adaptors
+// embedding taskcommon.BaseBilling get a request-derived default.
+type MediaBillingEstimator interface {
+	EstimateMediaBilling(c *gin.Context, info *relaycommon.RelayInfo) *types.MediaBillingMeta
+}

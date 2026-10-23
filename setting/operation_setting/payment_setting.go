@@ -3,8 +3,11 @@ package operation_setting
 import "github.com/QuantumNous/new-api/setting/config"
 
 type PaymentSetting struct {
-	AmountOptions  []int           `json:"amount_options"`
-	AmountDiscount map[int]float64 `json:"amount_discount"` // 充值金额对应的折扣，例如 100 元 0.9 表示 100 元充值享受 9 折优惠
+	AmountOptions []int `json:"amount_options"`
+
+	// AmountDiscount 充值金额对应的实付折扣，例如 {100: 0.9} 表示充值 100 元
+	// 只需支付 90 元；到账额度仍按充值金额计算。缺省或非法值按 1 处理。
+	AmountDiscount map[int]float64 `json:"amount_discount"`
 
 	ComplianceConfirmed    bool   `json:"compliance_confirmed"`
 	ComplianceTermsVersion string `json:"compliance_terms_version"`
@@ -14,6 +17,10 @@ type PaymentSetting struct {
 }
 
 const CurrentComplianceTermsVersion = "v1"
+
+// CustomCallbackAddress 覆盖支付回调地址前缀，留空时回落到系统对外地址。
+// 微信支付与支付宝的异步通知 URL 都以它为基础拼接。
+var CustomCallbackAddress = ""
 
 // 默认配置
 var paymentSetting = PaymentSetting{

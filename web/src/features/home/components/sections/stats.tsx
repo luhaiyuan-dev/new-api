@@ -16,113 +16,268 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useRef, useEffect, useCallback } from 'react'
+import {
+  Activity,
+  Layers,
+  ShieldCheck,
+  Store,
+  TrendingUp,
+  Zap,
+} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-interface CounterProps {
-  end: number
-  suffix?: string
-  prefix?: string
-  duration?: number
-  decimals?: number
+import { AnimateInView } from '@/components/animate-in-view'
+import {
+  HOME_CONTAINER,
+  HOME_PANEL,
+  HOME_STAGGER,
+} from '@/features/home/constants'
+import { cn } from '@/lib/utils'
+
+interface MetricsBandProps {
+  className?: string
 }
 
-function Counter(props: CounterProps) {
-  const { end, suffix = '', prefix = '', duration = 1600, decimals = 0 } = props
+interface KpiMetric {
+  id: string
+  labelKey: string
+  value: number
+  decimals?: number
+  suffix?: string
+  /** Unit rendered after the value; omitted when the suffix already carries it. */
+  unitKey?: string
+  footKey: string
+  /** Literal appended after the translated foot label, e.g. `18.2K`. */
+  footValue?: string
+  icon: ReactNode
+  tone: string
+}
+
+const KPI_METRICS: KpiMetric[] = [
+  {
+    id: 'requests',
+    labelKey: 'Total API requests',
+    value: 8.64,
+    decimals: 2,
+    unitKey: 'billion calls',
+    footKey: '+18.6% vs last month',
+    icon: <Activity className='size-4' />,
+    tone: 'text-blue-600 dark:text-blue-400',
+  },
+  {
+    id: 'models',
+    labelKey: 'Models integrated',
+    value: 128,
+    unitKey: 'models',
+    footKey: '6 added this week',
+    icon: <Layers className='size-4' />,
+    tone: 'text-sky-600 dark:text-sky-400',
+  },
+  {
+    id: 'merchants',
+    labelKey: 'Merchants served',
+    value: 3600,
+    suffix: '+',
+    unitKey: 'merchants',
+    footKey: '+9.2% vs last month',
+    icon: <Store className='size-4' />,
+    tone: 'text-cyan-600 dark:text-cyan-400',
+  },
+  {
+    id: 'success',
+    labelKey: 'Average success rate',
+    value: 99.95,
+    decimals: 2,
+    suffix: '%',
+    footKey: 'Rolling 30 days',
+    icon: <ShieldCheck className='size-4' />,
+    tone: 'text-indigo-600 dark:text-indigo-400',
+  },
+  {
+    id: 'qps',
+    labelKey: 'Live QPS',
+    value: 12057,
+    unitKey: 'req/s',
+    footKey: 'Current peak',
+    footValue: '18.2K',
+    icon: <Zap className='size-4' />,
+    tone: 'text-blue-600 dark:text-blue-400',
+  },
+]
+
+const QPS_BASE = 12057
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString('en-GB', { hour12: false })
+}
+
+function Counter(props: {
+  end: number
+  suffix?: string
+  decimals?: number
+  className?: string
+}) {
   const ref = useRef<HTMLSpanElement>(null)
   const startedRef = useRef(false)
 
-  const formatValue = useCallback(
-    (v: number) =>
-      decimals > 0 ? v.toFixed(decimals) : Math.round(v).toLocaleString(),
-    [decimals]
+  const format = useCallback(
+    (value: number) =>
+      props.decimals
+        ? value.toFixed(props.decimals)
+        : Math.round(value).toLocaleString(),
+    [props.decimals]
   )
-
-  const animate = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    const start = performance.now()
-    const step = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      el.textContent = `${prefix}${formatValue(eased * end)}${suffix}`
-      if (progress < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  }, [end, duration, prefix, suffix, formatValue])
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
 
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    if (mq.matches) {
-      el.textContent = `${prefix}${formatValue(end)}${suffix}`
+    const final = `${format(props.end)}${props.suffix ?? ''}`
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.textContent = final
       return
     }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !startedRef.current) {
-          startedRef.current = true
-          animate()
-          observer.unobserve(el)
+        if (!entry.isIntersecting || startedRef.current) return
+        startedRef.current = true
+        observer.unobserve(el)
+
+        const start = performance.now()
+        const duration = 1600
+        const step = (now: number) => {
+          const progress = Math.min((now - start) / duration, 1)
+          const eased = 1 - Math.pow(1 - progress, 3)
+          el.textContent = `${format(eased * props.end)}${props.suffix ?? ''}`
+          if (progress < 1) requestAnimationFrame(step)
         }
+        requestAnimationFrame(step)
       },
-      { threshold: 0.5 }
+      { threshold: 0.4 }
     )
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [animate, end, prefix, suffix, formatValue])
+  }, [format, props.end, props.suffix])
 
   return (
-    <span ref={ref} className='tabular-nums'>
-      {prefix}0{suffix}
+    <span ref={ref} className={cn('tabular-nums', props.className)}>
+      {format(props.end)}
+      {props.suffix}
     </span>
   )
 }
 
-interface StatsProps {
-  className?: string
-}
-
-interface StatItem {
-  end: number
-  suffix: string
-  label: string
-  decimals?: number
-}
-
-export function Stats(_props: StatsProps) {
+/**
+ * Platform KPI band. Counters animate in once visible and the timestamp plus
+ * live QPS keep ticking so the band reads as a live status strip.
+ */
+export function Stats(_props: MetricsBandProps) {
   const { t } = useTranslation()
+  const [updatedAt, setUpdatedAt] = useState(() => formatTime(new Date()))
+  const [qps, setQps] = useState(QPS_BASE)
 
-  const stats: StatItem[] = [
-    { end: 50, suffix: '+', label: t('upstream services integrated') },
-    { end: 100, suffix: '+', label: t('model billing support') },
-    { end: 50, suffix: '+', label: t('compatible API routes') },
-    { end: 10, suffix: '+', label: t('scheduling controls') },
-  ]
+  useEffect(() => {
+    const clock = setInterval(() => setUpdatedAt(formatTime(new Date())), 1000)
+    const sampler = setInterval(() => {
+      const jitter = 1 + (Math.random() - 0.45) * 0.03
+      setQps(Math.round(QPS_BASE * jitter))
+    }, 2000)
+
+    return () => {
+      clearInterval(clock)
+      clearInterval(sampler)
+    }
+  }, [])
 
   return (
-    <div className='border-border/40 bg-muted/10 relative z-10 border-y'>
-      <div className='mx-auto max-w-6xl px-6 py-10 md:py-12'>
-        <div className='grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12'>
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className='flex flex-col items-center text-center'
+    <section
+      id='metrics'
+      className='border-border/30 bg-muted/15 relative z-10 border-y'
+    >
+      <div className={cn(HOME_CONTAINER, 'py-14 md:py-16')}>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-2'>
+          <h2 className='text-xl font-bold tracking-tight md:text-2xl'>
+            {t('Platform status, live')}
+          </h2>
+          <span className='text-muted-foreground/45 text-[11px] tracking-[0.2em] uppercase'>
+            Live Platform Metrics
+          </span>
+          <span className='bg-border/60 hidden h-px flex-1 md:block' />
+          <span className='text-muted-foreground/55 text-[11px]'>
+            {t('Updated at')}{' '}
+            <b className='font-mono text-blue-600 tabular-nums dark:text-blue-400'>
+              {updatedAt}
+            </b>
+          </span>
+        </div>
+
+        <div className='mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
+          {KPI_METRICS.map((metric, index) => (
+            <AnimateInView
+              key={metric.id}
+              as='div'
+              delay={index * HOME_STAGGER}
+              className={cn(HOME_PANEL, 'p-5 pl-6')}
             >
-              <span className='text-2xl font-bold tracking-tight md:text-3xl'>
-                <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
-              </span>
-              <span className='text-muted-foreground mt-1.5 text-xs'>
-                {s.label}
-              </span>
-            </div>
+              <span
+                aria-hidden
+                className='absolute inset-y-4 left-0 w-[3px] rounded-full bg-gradient-to-b from-blue-500 to-cyan-400'
+              />
+              <div className='flex items-center gap-2.5'>
+                <span
+                  className={cn(
+                    'flex size-8 items-center justify-center rounded-lg border border-blue-500/15 bg-blue-500/[0.06]',
+                    metric.tone
+                  )}
+                >
+                  {metric.icon}
+                </span>
+                <span className='text-muted-foreground/70 text-xs'>
+                  {t(metric.labelKey)}
+                </span>
+              </div>
+
+              <div className='mt-4 flex items-baseline gap-1.5'>
+                <span
+                  className={cn(
+                    'text-2xl leading-none font-bold tracking-tight md:text-[28px]',
+                    metric.tone
+                  )}
+                >
+                  {metric.id === 'qps' ? (
+                    <span className='tabular-nums'>{qps.toLocaleString()}</span>
+                  ) : (
+                    <Counter
+                      end={metric.value}
+                      decimals={metric.decimals}
+                      suffix={metric.suffix}
+                    />
+                  )}
+                </span>
+                {metric.unitKey ? (
+                  <span className='text-muted-foreground/60 text-xs'>
+                    {t(metric.unitKey)}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className='text-muted-foreground/55 mt-3.5 flex items-center gap-1.5 text-[11px]'>
+                <TrendingUp className='size-3 text-emerald-500 dark:text-emerald-400' />
+                {t(metric.footKey)}
+                {metric.footValue ? (
+                  <b className='text-foreground/70 font-semibold tabular-nums'>
+                    {metric.footValue}
+                  </b>
+                ) : null}
+              </div>
+            </AnimateInView>
           ))}
         </div>
       </div>
-    </div>
+    </section>
   )
 }

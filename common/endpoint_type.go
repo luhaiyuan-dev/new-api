@@ -52,9 +52,21 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI}
 		}
 	}
-	if IsImageGenerationModel(modelName) {
-		// add to first
-		endpointTypes = append([]constant.EndpointType{constant.EndpointTypeImageGeneration}, endpointTypes...)
+	switch GetModelKind(modelName) {
+	case ModelKindImage:
+		endpointTypes = prependEndpointType(endpointTypes, constant.EndpointTypeImageGeneration)
+	case ModelKindVideo:
+		endpointTypes = prependEndpointType(endpointTypes, constant.EndpointTypeOpenAIVideo)
 	}
 	return endpointTypes
+}
+
+// prependEndpointType puts target first while keeping the list duplicate-free.
+func prependEndpointType(endpointTypes []constant.EndpointType, target constant.EndpointType) []constant.EndpointType {
+	for _, endpointType := range endpointTypes {
+		if endpointType == target {
+			return endpointTypes
+		}
+	}
+	return append([]constant.EndpointType{target}, endpointTypes...)
 }

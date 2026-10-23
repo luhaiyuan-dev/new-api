@@ -30,7 +30,7 @@ import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
-import { formatCurrencyFromUSD } from '@/lib/currency'
+import { formatCNY } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getCodexUsage, updateChannelBalance } from '../../api'
@@ -139,7 +139,7 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   }
 
   const formatBalance = (bal: number) =>
-    formatCurrencyFromUSD(bal, {
+    formatCNY(bal, {
       digitsLarge: 2,
       digitsSmall: 4,
       abbreviate: false,

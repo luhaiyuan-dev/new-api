@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -20,20 +19,15 @@ import (
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
-	// 支持任务仅按次计费
-	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
-		logContent = fmt.Sprintf("%s，按次计费", logContent)
-	} else {
-		if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
-			var contents []string
-			for key, ra := range otherRatios {
-				if 1.0 != ra {
-					contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
-				}
+	if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
+		var contents []string
+		for key, ra := range otherRatios {
+			if 1.0 != ra {
+				contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
 			}
-			if len(contents) > 0 {
-				logContent = fmt.Sprintf("%s, 计算参数：%s", logContent, strings.Join(contents, ", "))
-			}
+		}
+		if len(contents) > 0 {
+			logContent = fmt.Sprintf("%s, 计算参数：%s", logContent, strings.Join(contents, ", "))
 		}
 	}
 	other := make(map[string]interface{})
@@ -47,6 +41,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
 		other["user_group_ratio"] = info.PriceData.GroupRatioInfo.GroupSpecialRatio
 	}
+	appendMediaBillingInfo(info, other)
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
@@ -127,6 +122,22 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 			other["model_ratio"] = bc.ModelRatio
 		}
 		other["group_ratio"] = bc.GroupRatio
+		if bc.BillingUnit != "" {
+			other["billing_unit"] = bc.BillingUnit
+		}
+		if bc.MediaBilling != nil {
+			other["media_unit_price"] = bc.MediaBilling.UnitPrice
+			other["media_quantity"] = bc.MediaBilling.Quantity
+			if bc.MediaBilling.ResolutionTier != "" {
+				other["resolution_tier"] = bc.MediaBilling.ResolutionTier
+			}
+			if bc.MediaBilling.QualityTier != "" {
+				other["quality_tier"] = bc.MediaBilling.QualityTier
+			}
+			if len(bc.MediaBilling.ExtraRatios) > 0 {
+				other["media_extra_ratios"] = bc.MediaBilling.ExtraRatios
+			}
+		}
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {
 				other[k] = v
@@ -278,6 +289,48 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		Other:     other,
 		NodeName:  task.PrivateData.NodeName,
 	})
+}
+
+// RecalculateTaskQuotaByMedia 按提交时冻结的媒体价目表快照与实际用量重算任务额度。
+// actualUnits <= 0 时退回快照中的预扣数量。返回 false 表示快照不可用。
+func RecalculateTaskQuotaByMedia(ctx context.Context, task *model.Task, actualUnits float64) bool {
+	actualQuota, clamp, quantity, multiplier, ok := computeTaskMediaQuota(task.PrivateData.BillingContext, actualUnits)
+	if !ok {
+		return false
+	}
+	media := task.PrivateData.BillingContext.MediaBilling
+	reason := fmt.Sprintf("媒体重算：unit=%s, unitPrice=%.6f, quantity=%.2f, multiplier=%.4f, groupRatio=%.4f",
+		media.Unit, media.UnitPrice, quantity, multiplier, task.PrivateData.BillingContext.GroupRatio)
+	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
+	return true
+}
+
+// computeTaskMediaQuota derives the final quota from a frozen media price
+// snapshot. actualUnits <= 0 falls back to the snapshot quantity.
+func computeTaskMediaQuota(bc *model.TaskBillingContext, actualUnits float64) (quota int, clamp *common.QuotaClamp, quantity, multiplier float64, ok bool) {
+	if bc == nil || bc.MediaBilling == nil {
+		return 0, nil, 0, 0, false
+	}
+	media := bc.MediaBilling
+	quantity = media.Quantity
+	if actualUnits > 0 {
+		quantity = actualUnits
+	}
+	if quantity <= 0 || media.UnitPrice <= 0 || bc.GroupRatio < 0 {
+		return 0, nil, quantity, 0, false
+	}
+
+	multiplier = 1.0
+	if media.ResolutionMultiplier > 0 {
+		multiplier *= media.ResolutionMultiplier
+	}
+	multiplier *= media.ExtraMultiplier()
+
+	quota, clamp = common.QuotaRoundChecked(media.UnitPrice * quantity * multiplier * common.QuotaPerUnit * bc.GroupRatio)
+	if quota <= 0 {
+		return 0, nil, quantity, multiplier, false
+	}
+	return quota, clamp, quantity, multiplier, true
 }
 
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。

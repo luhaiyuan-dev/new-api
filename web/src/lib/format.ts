@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import dayjs from '@/lib/dayjs'
 
 import {
-  formatCurrencyFromUSD,
   formatQuotaWithCurrency,
   getCurrencyDisplay,
   getCurrencyFractionDigits,
@@ -58,17 +57,13 @@ export function formatPercent(value: number | null | undefined): string {
   }).format((value as number) / 100)
 }
 
-export function formatCurrencyUSD(value: number | null | undefined): string {
-  return formatCurrencyFromUSD(value == null ? null : (value as number))
-}
-
 // ============================================================================
-// Quota Formatting (500,000 units = $1)
+// Quota Formatting (500,000 units = ¥1)
 // ============================================================================
 
 /**
  * Format quota into the configured display amount.
- * Quota is stored in units where `quotaPerUnit` equals 1 USD.
+ * Quota is stored in units where `quotaPerUnit` equals 1 元.
  */
 export function formatQuota(quota: number): string {
   return formatQuotaWithCurrency(quota, {
@@ -78,46 +73,22 @@ export function formatQuota(quota: number): string {
   })
 }
 
+/** Convert quota units to 元. */
+export function quotaUnitsToYuan(units: number): number {
+  const { config } = getCurrencyDisplay()
+  return units / config.quotaPerUnit
+}
+
 /**
- * Parse quota from the current display input back to quota units.
+ * Parse a 元 display input back to quota units.
+ * Reverse of quotaUnitsToYuan.
  */
-export function parseQuotaFromDollars(amount: number): number {
+export function parseQuotaFromYuan(amount: number): number {
   if (!Number.isFinite(amount)) return 0
 
-  const { config, meta } = getCurrencyDisplay()
+  const { config } = getCurrencyDisplay()
 
-  // Tokens-only or raw quota mode
-  if (meta.kind === 'tokens') {
-    return Math.round(amount)
-  }
-
-  const exchangeRate =
-    meta.kind === 'currency' || meta.kind === 'custom' ? meta.exchangeRate : 1
-
-  const usdAmount = exchangeRate > 0 ? amount / exchangeRate : amount
-
-  return Math.round(usdAmount * config.quotaPerUnit)
-}
-
-/**
- * Convert quota units to the configured display amount.
- * Reverse of parseQuotaFromDollars.
- */
-export function quotaUnitsToDollars(units: number): number {
-  const { config, meta } = getCurrencyDisplay()
-  return quotaUnitsToDisplayAmount(units, config.quotaPerUnit, meta)
-}
-
-function quotaUnitsToDisplayAmount(
-  units: number,
-  quotaPerUnit: number,
-  meta: ReturnType<typeof getCurrencyDisplay>['meta']
-): number {
-  if (meta.kind === 'tokens') {
-    return units
-  }
-
-  return (units / quotaPerUnit) * meta.exchangeRate
+  return Math.round(amount * config.quotaPerUnit)
 }
 
 /**
@@ -125,23 +96,13 @@ function quotaUnitsToDisplayAmount(
  * Uses the same precision as quota list formatting without symbols or suffixes.
  */
 export function quotaUnitsToEditableAmount(units: number): number {
-  const { config, meta } = getCurrencyDisplay()
-  const amount = quotaUnitsToDisplayAmount(units, config.quotaPerUnit, meta)
-
-  if (meta.kind === 'tokens') {
-    return Math.round(amount)
-  }
+  const amount = quotaUnitsToYuan(units)
 
   return Number(amount.toFixed(getCurrencyFractionDigits(amount)))
 }
 
 /** Return the input step matching the configured editable quota precision. */
 export function getEditableQuotaStep(): number {
-  const { meta } = getCurrencyDisplay()
-  if (meta.kind === 'tokens') {
-    return 1
-  }
-
   return 10 ** -getCurrencyFractionDigits(0)
 }
 

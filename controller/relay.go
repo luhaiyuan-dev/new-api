@@ -24,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -590,13 +591,22 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
+		// 媒体价目表需要在上游返回实际用量后差额结算，因此不再视为"按次即终值"。
+		perCallBilling := relayInfo.PriceData.UsePrice && relayInfo.PriceData.MediaBilling == nil
+		billingUnit := ""
+		if relayInfo.PriceData.MediaBilling != nil {
+			billingUnit = relayInfo.PriceData.MediaBilling.Unit
+		}
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
 			ModelPrice:      relayInfo.PriceData.ModelPrice,
 			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
 			ModelRatio:      relayInfo.PriceData.ModelRatio,
 			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			PerCallBilling:  perCallBilling,
+			BillingMode:     billing_setting.GetBillingMode(relayInfo.OriginModelName),
+			BillingUnit:     billingUnit,
+			MediaBilling:    relayInfo.PriceData.MediaBilling,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

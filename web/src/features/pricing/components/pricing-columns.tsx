@@ -34,6 +34,7 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import { getMediaPricePreview } from '../lib/media-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import {
   formatPrice,
@@ -49,9 +50,6 @@ import { ModelBillingModeBadge } from './model-billing-mode-badge'
 
 export interface PricingColumnsOptions {
   tokenUnit?: TokenUnit
-  priceRate?: number
-  usdExchangeRate?: number
-  showRechargePrice?: boolean
   selectedGroup?: string
 }
 
@@ -61,9 +59,6 @@ export function usePricingColumns(
   const { t } = useTranslation()
   const {
     tokenUnit = DEFAULT_TOKEN_UNIT,
-    priceRate = 1,
-    usdExchangeRate = 1,
-    showRechargePrice = false,
     selectedGroup,
   } = options
 
@@ -116,9 +111,6 @@ export function usePricingColumns(
         const model = row.original
         const dynamicSummary = getDynamicPricingSummary(model, {
           tokenUnit,
-          showRechargePrice,
-          priceRate,
-          usdExchangeRate,
           groupRatioMultiplier: getDynamicDisplayGroupRatio(
             model,
             selectedGroup
@@ -174,30 +166,41 @@ export function usePricingColumns(
           )
         }
 
+        const mediaPrice = getMediaPricePreview(model)
+        if (mediaPrice) {
+          return (
+            <div className='max-w-full min-w-0'>
+              <span className='font-mono text-sm tabular-nums'>
+                {mediaPrice.unitPrice}
+              </span>
+              <div className='text-muted-foreground/50 text-[10px]'>
+                {t(mediaPrice.unitLabelKey)}
+              </div>
+            </div>
+          )
+        }
+
+        if (model.media_summary) {
+          return (
+            <div className='max-w-full min-w-0'>
+              <span className='font-mono text-sm tabular-nums'>
+                {model.media_summary}
+              </span>
+              <div className='text-muted-foreground/50 text-[10px]'>
+                {t('Media pricing')}
+              </div>
+            </div>
+          )
+        }
+
         const isTokenBased = isTokenBasedModel(model)
 
         if (isTokenBased) {
           const inputPrice = stripTrailingZeros(
-            formatPrice(
-              model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              selectedGroup
-            )
+            formatPrice(model, 'input', tokenUnit, selectedGroup)
           )
           const outputPrice = stripTrailingZeros(
-            formatPrice(
-              model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              selectedGroup
-            )
+            formatPrice(model, 'output', tokenUnit, selectedGroup)
           )
 
           return (
@@ -217,9 +220,6 @@ export function usePricingColumns(
         const price = stripTrailingZeros(
           formatRequestPrice(
             model,
-            showRechargePrice,
-            priceRate,
-            usdExchangeRate,
             selectedGroup
           )
         )
@@ -245,9 +245,6 @@ export function usePricingColumns(
         const model = row.original
         const dynamicSummary = getDynamicPricingSummary(model, {
           tokenUnit,
-          showRechargePrice,
-          priceRate,
-          usdExchangeRate,
           groupRatioMultiplier: getDynamicDisplayGroupRatio(
             model,
             selectedGroup
@@ -293,9 +290,6 @@ export function usePricingColumns(
             model,
             'cache',
             tokenUnit,
-            showRechargePrice,
-            priceRate,
-            usdExchangeRate,
             selectedGroup
           )
         )

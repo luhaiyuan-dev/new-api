@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +49,6 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableChannelEnabled"] = strconv.FormatBool(common.AutomaticDisableChannelEnabled)
 	common.OptionMap["AutomaticEnableChannelEnabled"] = strconv.FormatBool(common.AutomaticEnableChannelEnabled)
 	common.OptionMap["LogConsumeEnabled"] = strconv.FormatBool(common.LogConsumeEnabled)
-	common.OptionMap["DisplayInCurrencyEnabled"] = strconv.FormatBool(common.DisplayInCurrencyEnabled)
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
 	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
@@ -76,52 +76,25 @@ func InitOptionMap() {
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
 	common.OptionMap["WorkerAllowHttpImageRequestEnabled"] = strconv.FormatBool(system_setting.WorkerAllowHttpImageRequestEnabled)
-	common.OptionMap["PayAddress"] = ""
 	common.OptionMap["CustomCallbackAddress"] = ""
-	common.OptionMap["EpayId"] = ""
-	common.OptionMap["EpayKey"] = ""
-	common.OptionMap["Price"] = strconv.FormatFloat(operation_setting.Price, 'f', -1, 64)
-	common.OptionMap["USDExchangeRate"] = strconv.FormatFloat(operation_setting.USDExchangeRate, 'f', -1, 64)
 	common.OptionMap["MinTopUp"] = strconv.Itoa(operation_setting.MinTopUp)
-	common.OptionMap["StripeMinTopUp"] = strconv.Itoa(setting.StripeMinTopUp)
-	common.OptionMap["StripeApiSecret"] = setting.StripeApiSecret
-	common.OptionMap["StripeWebhookSecret"] = setting.StripeWebhookSecret
-	common.OptionMap["StripePriceId"] = setting.StripePriceId
-	common.OptionMap["StripeUnitPrice"] = strconv.FormatFloat(setting.StripeUnitPrice, 'f', -1, 64)
-	common.OptionMap["StripePromotionCodesEnabled"] = strconv.FormatBool(setting.StripePromotionCodesEnabled)
-	common.OptionMap["CreemApiKey"] = setting.CreemApiKey
-	common.OptionMap["CreemProducts"] = setting.CreemProducts
-	common.OptionMap["CreemTestMode"] = strconv.FormatBool(setting.CreemTestMode)
-	common.OptionMap["CreemWebhookSecret"] = setting.CreemWebhookSecret
-	common.OptionMap["WaffoEnabled"] = strconv.FormatBool(setting.WaffoEnabled)
-	common.OptionMap["WaffoApiKey"] = setting.WaffoApiKey
-	common.OptionMap["WaffoPrivateKey"] = setting.WaffoPrivateKey
-	common.OptionMap["WaffoPublicCert"] = setting.WaffoPublicCert
-	common.OptionMap["WaffoSandboxPublicCert"] = setting.WaffoSandboxPublicCert
-	common.OptionMap["WaffoSandboxApiKey"] = setting.WaffoSandboxApiKey
-	common.OptionMap["WaffoSandboxPrivateKey"] = setting.WaffoSandboxPrivateKey
-	common.OptionMap["WaffoSandbox"] = strconv.FormatBool(setting.WaffoSandbox)
-	common.OptionMap["WaffoMerchantId"] = setting.WaffoMerchantId
-	common.OptionMap["WaffoNotifyUrl"] = setting.WaffoNotifyUrl
-	common.OptionMap["WaffoReturnUrl"] = setting.WaffoReturnUrl
-	common.OptionMap["WaffoSubscriptionReturnUrl"] = setting.WaffoSubscriptionReturnUrl
-	common.OptionMap["WaffoCurrency"] = setting.WaffoCurrency
-	common.OptionMap["WaffoUnitPrice"] = strconv.FormatFloat(setting.WaffoUnitPrice, 'f', -1, 64)
-	common.OptionMap["WaffoMinTopUp"] = strconv.Itoa(setting.WaffoMinTopUp)
-	common.OptionMap["WaffoPayMethods"] = setting.WaffoPayMethods2JsonString()
-	common.OptionMap["WaffoPancakeMerchantID"] = setting.WaffoPancakeMerchantID
-	common.OptionMap["WaffoPancakePrivateKey"] = setting.WaffoPancakePrivateKey
-	common.OptionMap["WaffoPancakeReturnURL"] = setting.WaffoPancakeReturnURL
-	common.OptionMap["WaffoPancakeUnitPrice"] = strconv.FormatFloat(setting.WaffoPancakeUnitPrice, 'f', -1, 64)
-	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.Itoa(setting.WaffoPancakeMinTopUp)
-	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
-	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
-	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
+	common.OptionMap["WechatAppId"] = setting.WechatAppId
+	common.OptionMap["WechatMchId"] = setting.WechatMchId
+	common.OptionMap["WechatMchSerialNo"] = setting.WechatMchSerialNo
+	common.OptionMap["WechatApiV3Key"] = setting.WechatApiV3Key
+	common.OptionMap["WechatMchPrivateKey"] = setting.WechatMchPrivateKey
+	common.OptionMap["WechatMinTopUp"] = strconv.Itoa(setting.WechatMinTopUp)
+	common.OptionMap["WechatOrderExpireMinutes"] = strconv.Itoa(setting.WechatOrderExpireMinutes)
+	common.OptionMap["AlipayAppId"] = setting.AlipayAppId
+	common.OptionMap["AlipayPrivateKey"] = setting.AlipayPrivateKey
+	common.OptionMap["AlipayPublicKey"] = setting.AlipayPublicKey
+	common.OptionMap["AlipaySandbox"] = strconv.FormatBool(setting.AlipaySandbox)
+	common.OptionMap["AlipayMinTopUp"] = strconv.Itoa(setting.AlipayMinTopUp)
+	common.OptionMap["AlipayOrderExpireMinutes"] = strconv.Itoa(setting.AlipayOrderExpireMinutes)
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["MaxTokenAutoGroups"] = strconv.Itoa(setting.GetMaxTokenAutoGroups())
-	common.OptionMap["PayMethods"] = operation_setting.PayMethods2JsonString()
 	common.OptionMap["GitHubClientId"] = ""
 	common.OptionMap["GitHubClientSecret"] = ""
 	common.OptionMap["TelegramBotToken"] = ""
@@ -214,6 +187,14 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	// 最低充值以整数元为单位，小数值会被 strconv.Atoi 静默解析成 0 并回落到
+	// 全局最低充值，因此在写入前直接拒绝，避免「配置看着生效、实际没生效」。
+	switch key {
+	case "MinTopUp", "WechatMinTopUp", "AlipayMinTopUp":
+		if _, err := strconv.Atoi(value); err != nil {
+			return errors.New("最低充值金额必须为整数（单位：元）")
+		}
 	}
 	return nil
 }
@@ -336,16 +317,6 @@ func updateOptionMap(key string, value string) (err error) {
 			common.AutomaticEnableChannelEnabled = boolValue
 		case "LogConsumeEnabled":
 			common.LogConsumeEnabled = boolValue
-		case "DisplayInCurrencyEnabled":
-			// 兼容旧字段：同步到新配置 general_setting.quota_display_type（运行时生效）
-			// true -> USD, false -> TOKENS
-			newVal := "USD"
-			if !boolValue {
-				newVal = "TOKENS"
-			}
-			if cfg := config.GlobalConfig.Get("general_setting"); cfg != nil {
-				_ = config.UpdateConfigFromMap(cfg, map[string]string{"quota_display_type": newVal})
-			}
 		case "DisplayTokenStatEnabled":
 			common.DisplayTokenStatEnabled = boolValue
 		case "DrawingEnabled":
@@ -414,8 +385,6 @@ func updateOptionMap(key string, value string) (err error) {
 		system_setting.WorkerUrl = value
 	case "WorkerValidKey":
 		system_setting.WorkerValidKey = value
-	case "PayAddress":
-		operation_setting.PayAddress = value
 	case "Chats":
 		err = setting.UpdateChatsByJsonString(value)
 	case "AutoGroups":
@@ -424,82 +393,46 @@ func updateOptionMap(key string, value string) (err error) {
 		err = setting.UpdateMaxTokenAutoGroups(value)
 	case "CustomCallbackAddress":
 		operation_setting.CustomCallbackAddress = value
-	case "EpayId":
-		operation_setting.EpayId = value
-	case "EpayKey":
-		operation_setting.EpayKey = value
-	case "Price":
-		operation_setting.Price, _ = strconv.ParseFloat(value, 64)
-	case "USDExchangeRate":
-		operation_setting.USDExchangeRate, _ = strconv.ParseFloat(value, 64)
 	case "MinTopUp":
-		operation_setting.MinTopUp, _ = strconv.Atoi(value)
-	case "StripeApiSecret":
-		setting.StripeApiSecret = value
-	case "StripeWebhookSecret":
-		setting.StripeWebhookSecret = value
-	case "StripePriceId":
-		setting.StripePriceId = value
-	case "StripeUnitPrice":
-		setting.StripeUnitPrice, _ = strconv.ParseFloat(value, 64)
-	case "StripeMinTopUp":
-		setting.StripeMinTopUp, _ = strconv.Atoi(value)
-	case "StripePromotionCodesEnabled":
-		setting.StripePromotionCodesEnabled = value == "true"
-	case "CreemApiKey":
-		setting.CreemApiKey = value
-	case "CreemProducts":
-		setting.CreemProducts = value
-	case "CreemTestMode":
-		setting.CreemTestMode = value == "true"
-	case "CreemWebhookSecret":
-		setting.CreemWebhookSecret = value
-	case "WaffoEnabled":
-		setting.WaffoEnabled = value == "true"
-	case "WaffoApiKey":
-		setting.WaffoApiKey = value
-	case "WaffoPrivateKey":
-		setting.WaffoPrivateKey = value
-	case "WaffoPublicCert":
-		setting.WaffoPublicCert = value
-	case "WaffoSandboxPublicCert":
-		setting.WaffoSandboxPublicCert = value
-	case "WaffoSandboxApiKey":
-		setting.WaffoSandboxApiKey = value
-	case "WaffoSandboxPrivateKey":
-		setting.WaffoSandboxPrivateKey = value
-	case "WaffoSandbox":
-		setting.WaffoSandbox = value == "true"
-	case "WaffoMerchantId":
-		setting.WaffoMerchantId = value
-	case "WaffoNotifyUrl":
-		setting.WaffoNotifyUrl = value
-	case "WaffoReturnUrl":
-		setting.WaffoReturnUrl = value
-	case "WaffoSubscriptionReturnUrl":
-		setting.WaffoSubscriptionReturnUrl = value
-	case "WaffoCurrency":
-		setting.WaffoCurrency = value
-	case "WaffoUnitPrice":
-		setting.WaffoUnitPrice, _ = strconv.ParseFloat(value, 64)
-	case "WaffoMinTopUp":
-		setting.WaffoMinTopUp, _ = strconv.Atoi(value)
-	case "WaffoPancakeMerchantID":
-		setting.WaffoPancakeMerchantID = value
-	case "WaffoPancakePrivateKey":
-		setting.WaffoPancakePrivateKey = value
-	case "WaffoPancakeReturnURL":
-		setting.WaffoPancakeReturnURL = value
-	case "WaffoPancakeStoreID":
-		setting.WaffoPancakeStoreID = value
-	case "WaffoPancakeProductID":
-		setting.WaffoPancakeProductID = value
-	case "WaffoPancakeUnitPrice":
-		setting.WaffoPancakeUnitPrice, _ = strconv.ParseFloat(value, 64)
-	case "WaffoPancakeMinTopUp":
-		setting.WaffoPancakeMinTopUp, _ = strconv.Atoi(value)
-	case "TopupGroupRatio":
-		err = common.UpdateTopupGroupRatioByJSONString(value)
+		if intValue, err := strconv.Atoi(value); err == nil {
+			operation_setting.MinTopUp = intValue
+		} else {
+			common.SysError("配置项 MinTopUp 不是整数，已保留原值：" + value)
+		}
+	case "WechatAppId":
+		setting.WechatAppId = value
+	case "WechatMchId":
+		setting.WechatMchId = value
+	case "WechatMchSerialNo":
+		setting.WechatMchSerialNo = value
+	case "WechatApiV3Key":
+		setting.WechatApiV3Key = value
+	case "WechatMchPrivateKey":
+		setting.WechatMchPrivateKey = value
+	case "WechatMinTopUp":
+		if intValue, err := strconv.Atoi(value); err == nil {
+			setting.WechatMinTopUp = intValue
+		} else {
+			common.SysError("配置项 WechatMinTopUp 不是整数，已保留原值：" + value)
+		}
+	case "WechatOrderExpireMinutes":
+		setting.WechatOrderExpireMinutes, _ = strconv.Atoi(value)
+	case "AlipayAppId":
+		setting.AlipayAppId = value
+	case "AlipayPrivateKey":
+		setting.AlipayPrivateKey = value
+	case "AlipayPublicKey":
+		setting.AlipayPublicKey = value
+	case "AlipaySandbox":
+		setting.AlipaySandbox = value == "true"
+	case "AlipayMinTopUp":
+		if intValue, err := strconv.Atoi(value); err == nil {
+			setting.AlipayMinTopUp = intValue
+		} else {
+			common.SysError("配置项 AlipayMinTopUp 不是整数，已保留原值：" + value)
+		}
+	case "AlipayOrderExpireMinutes":
+		setting.AlipayOrderExpireMinutes, _ = strconv.Atoi(value)
 	case "GitHubClientId":
 		common.GitHubClientId = value
 	case "GitHubClientSecret":
@@ -555,7 +488,9 @@ func updateOptionMap(key string, value string) (err error) {
 	case "DataExportDefaultTime":
 		common.DataExportDefaultTime = value
 	case "ModelRatio":
-		err = ratio_setting.UpdateModelRatioByJSONString(value)
+		if err = ratio_setting.ValidateModelRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateModelRatioByJSONString(value)
+		}
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
 	case "GroupGroupRatio":
@@ -563,19 +498,33 @@ func updateOptionMap(key string, value string) (err error) {
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
 	case "CompletionRatio":
-		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
+		if err = ratio_setting.ValidateCompletionRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateCompletionRatioByJSONString(value)
+		}
 	case "ModelPrice":
-		err = ratio_setting.UpdateModelPriceByJSONString(value)
+		if err = ratio_setting.ValidateModelPriceMapJSON(value); err == nil {
+			err = ratio_setting.UpdateModelPriceByJSONString(value)
+		}
 	case "CacheRatio":
-		err = ratio_setting.UpdateCacheRatioByJSONString(value)
+		if err = ratio_setting.ValidateCacheRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateCacheRatioByJSONString(value)
+		}
 	case "CreateCacheRatio":
-		err = ratio_setting.UpdateCreateCacheRatioByJSONString(value)
+		if err = ratio_setting.ValidateCreateCacheRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateCreateCacheRatioByJSONString(value)
+		}
 	case "ImageRatio":
-		err = ratio_setting.UpdateImageRatioByJSONString(value)
+		if err = ratio_setting.ValidateImageRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateImageRatioByJSONString(value)
+		}
 	case "AudioRatio":
-		err = ratio_setting.UpdateAudioRatioByJSONString(value)
+		if err = ratio_setting.ValidateAudioRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateAudioRatioByJSONString(value)
+		}
 	case "AudioCompletionRatio":
-		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
+		if err = ratio_setting.ValidateAudioCompletionRatioMapJSON(value); err == nil {
+			err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
+		}
 	case "TopUpLink":
 		common.TopUpLink = value
 	//case "ChatLink":
@@ -596,12 +545,6 @@ func updateOptionMap(key string, value string) (err error) {
 		err = operation_setting.AutomaticRetryStatusCodesFromString(value)
 	case "StreamCacheQueueLength":
 		setting.StreamCacheQueueLength, _ = strconv.Atoi(value)
-	case "PayMethods":
-		err = operation_setting.UpdatePayMethodsByJsonString(value)
-	case "WaffoPayMethods":
-		// WaffoPayMethods is read directly from OptionMap via setting.GetWaffoPayMethods().
-		// The value is already stored in OptionMap at the top of this function (line: common.OptionMap[key] = value).
-		// No additional in-memory variable to update.
 	}
 	return err
 }

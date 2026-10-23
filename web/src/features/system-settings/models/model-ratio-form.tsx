@@ -34,6 +34,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { getEnabledModels } from '@/features/channels/api'
 
@@ -59,6 +66,9 @@ type ModelFormValues = {
   ExposeRatioEnabled: boolean
   BillingMode: string
   BillingExpr: string
+  MediaModels: string
+  MediaEnabled: boolean
+  MediaPolicy: string
 }
 
 type ModelRatioFormProps = {
@@ -80,6 +90,7 @@ type ModelJsonFieldName =
   | 'ImageRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
+  | 'MediaModels'
 
 const modelJsonFields: Array<{
   name: ModelJsonFieldName
@@ -90,7 +101,7 @@ const modelJsonFields: Array<{
     name: 'ModelPrice',
     labelKey: 'Model fixed pricing',
     descriptionKey:
-      'JSON map of model → USD cost per request. Takes precedence over ratio based billing.',
+      'JSON map of model → CNY cost per request. Takes precedence over ratio based billing.',
   },
   {
     name: 'ModelRatio',
@@ -129,6 +140,12 @@ const modelJsonFields: Array<{
     name: 'AudioCompletionRatio',
     labelKey: 'Audio completion ratio',
     descriptionKey: 'Ratio applied to audio completions for streaming models.',
+  },
+  {
+    name: 'MediaModels',
+    labelKey: 'Media pricing',
+    descriptionKey:
+      'JSON map of model to media price spec used for image and video billing.',
   },
 ]
 
@@ -261,6 +278,71 @@ export const ModelRatioForm = memo(function ModelRatioForm({
       )}
 
       <Form {...form}>
+        {!isUnsetVariant && (
+          <div className='mb-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='MediaEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Enable media pricing')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'When disabled, every model keeps its ratio or fixed price and media tables are ignored.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='MediaPolicy'
+              render={({ field }) => (
+                <FormItem className='flex flex-col gap-2'>
+                  <FormLabel>{t('Unknown tier policy')}</FormLabel>
+                  <FormControl>
+                    <Select
+                      value={field.value || 'fallback_base'}
+                      onValueChange={(value) =>
+                        field.onChange(value ?? 'fallback_base')
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value='fallback_base'>
+                          {t('Fall back to the base price')}
+                        </SelectItem>
+                        <SelectItem value='nearest'>
+                          {t('Nearest tier')}
+                        </SelectItem>
+                        <SelectItem value='strict'>
+                          {t('Reject the request')}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormDescription className='text-xs'>
+                    {t(
+                      'Controls what happens when a requested size or quality has no matching tier.'
+                    )}
+                  </FormDescription>
+                </FormItem>
+              )}
+            />
+          </div>
+        )}
+
         {editMode === 'visual' ? (
           <div className='space-y-6'>
             <ModelRatioVisualEditor
@@ -275,6 +357,8 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
+              savedMediaModels={savedValues.MediaModels}
+              mediaModels={form.watch('MediaModels')}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}

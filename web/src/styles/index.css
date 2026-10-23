@@ -428,6 +428,103 @@ For commercial licensing, please contact support@quantumnous.com
   .scroll-container:hover .animate-scroll-down {
     animation-play-state: paused;
   }
+
+  /* Tech decorations for the landing page: neural network, data flow,
+     grid drift, gradient shimmer and sweeping beams. */
+  @keyframes tech-grid-drift {
+    0% {
+      transform: translate3d(0, 0, 0);
+    }
+    100% {
+      transform: translate3d(4rem, 4rem, 0);
+    }
+  }
+
+  @keyframes tech-node-pulse {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: scale(0.85);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+  }
+
+  @keyframes tech-data-flow {
+    to {
+      stroke-dashoffset: -120;
+    }
+  }
+
+  @keyframes tech-shimmer {
+    0% {
+      background-position: 0% 50%;
+    }
+    100% {
+      background-position: 200% 50%;
+    }
+  }
+
+  @keyframes tech-beam {
+    0% {
+      transform: translateX(-120%);
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    88% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(120%);
+      opacity: 0;
+    }
+  }
+
+  .tech-animate-grid {
+    animation: tech-grid-drift 18s linear infinite alternate;
+  }
+
+  .tech-animate-node {
+    animation: tech-node-pulse 4s ease-in-out infinite;
+    transform-origin: center;
+  }
+
+  .tech-animate-flow {
+    animation: tech-data-flow 3s linear infinite;
+  }
+
+  .tech-animate-shimmer {
+    background-size: 200% auto;
+    animation: tech-shimmer 6s linear infinite;
+  }
+
+  .tech-animate-beam {
+    animation: tech-beam 7s ease-in-out infinite;
+  }
+
+  .tech-animate-node-delay-1 {
+    animation-delay: 0.6s;
+  }
+
+  .tech-animate-node-delay-2 {
+    animation-delay: 1.2s;
+  }
+
+  .tech-animate-node-delay-3 {
+    animation-delay: 1.8s;
+  }
+
+  .tech-animate-flow-delay {
+    animation-delay: 1.5s;
+  }
+
+  .tech-animate-node-delay-beam {
+    animation-delay: 2.5s;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -435,6 +532,11 @@ For commercial licensing, please contact support@quantumnous.com
   .animate-appear-zoom,
   .animate-scroll-up,
   .animate-scroll-down,
+  .tech-animate-grid,
+  .tech-animate-node,
+  .tech-animate-flow,
+  .tech-animate-shimmer,
+  .tech-animate-beam,
   [data-slot='table'] tbody tr {
     animation: none !important;
     opacity: 1;
@@ -716,5 +818,101 @@ For commercial licensing, please contact support@quantumnous.com
 @media (prefers-reduced-motion: reduce) {
   .auto-group-flow-border {
     display: none;
+  }
+}
+
+/* ── Landing page decorative motion (hero orbs, model ticker, scroll hint) ──
+ * The classes below are the shared building blocks for the blue tech-style
+ * landing page: a seamless marquee, drifting gradient orbs, floating motes and
+ * the hero scroll indicator. */
+@keyframes landing-marquee {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.landing-marquee-track {
+  animation: landing-marquee 32s linear infinite;
+  will-change: transform;
+}
+
+.landing-marquee:hover .landing-marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes landing-orb-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, -4%, 0) scale(1.08);
+  }
+}
+
+.landing-orb-drift {
+  animation: landing-orb-drift 16s ease-in-out infinite;
+}
+
+@keyframes landing-mote-rise {
+  0% {
+    transform: translate3d(0, 12%, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.7;
+  }
+  88% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(0, -110%, 0);
+    opacity: 0;
+  }
+}
+
+.landing-mote {
+  animation: landing-mote-rise 18s linear infinite;
+}
+
+@keyframes landing-scroll-hint {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(6px);
+    opacity: 0.4;
+  }
+}
+
+.landing-scroll-hint {
+  animation: landing-scroll-hint 2s ease-in-out infinite;
+}
+
+@keyframes landing-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgb(37 99 235 / 0.45);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 5px rgb(37 99 235 / 0);
+  }
+}
+
+.landing-live-dot {
+  animation: landing-live-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee-track,
+  .landing-orb-drift,
+  .landing-mote,
+  .landing-scroll-hint,
+  .landing-live-dot {
+    animation: none !important;
   }
 }

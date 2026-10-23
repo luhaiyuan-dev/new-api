@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	relaykitttypes "github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/samber/lo"
 
@@ -472,6 +473,37 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	return otherRatios
 }
 
+// EstimateMediaBilling reports the normalized dimensions Ali will actually be
+// asked for (defaults resolved by convertToAliRequest).
+func (a *TaskAdaptor) EstimateMediaBilling(c *gin.Context, info *relaycommon.RelayInfo) *relaykitttypes.MediaBillingMeta {
+	taskReq, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	aliReq, err := a.convertToAliRequest(info, taskReq)
+	if err != nil || aliReq.Parameters == nil {
+		return nil
+	}
+	seconds := aliReq.Parameters.Duration
+	if seconds > relaycommon.MaxTaskDurationSeconds {
+		seconds = relaycommon.MaxTaskDurationSeconds
+	}
+	meta := &relaykitttypes.MediaBillingMeta{
+		Kind:        relaykitttypes.MediaKindVideo,
+		Count:       1,
+		DurationSec: float64(seconds),
+	}
+	if aliReq.Parameters.Resolution != "" {
+		meta.Resolution = aliReq.Parameters.Resolution
+	} else {
+		meta.Size = aliReq.Parameters.Size
+	}
+	if aliReq.Parameters.Audio != nil && *aliReq.Parameters.Audio {
+		meta.Flags = append(meta.Flags, "audio")
+	}
+	return meta
+}
+
 // DoRequest delegates to common helper
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
@@ -573,6 +605,12 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusSuccess
 		// 阿里直接返回视频URL，不需要额外的代理端点
 		taskResult.Url = aliResp.Output.VideoURL
+		// usage.duration 是实际计费时长，用于按秒价目表的差额结算
+		if aliResp.Usage != nil {
+			if duration := int(aliResp.Usage.Duration); duration > 0 {
+				taskResult.BillingUnits = float64(duration)
+			}
+		}
 	case "FAILED", "CANCELED", "UNKNOWN":
 		taskResult.Status = model.TaskStatusFailure
 		if aliResp.Message != "" {
